@@ -8,10 +8,10 @@ import (
 	"io"
 
 	"github.com/imannamdari/quic-go/quicvarint"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/buf"
-	"github.com/xtls/xray-core/common/errors"
-	ptls "github.com/xtls/xray-core/common/protocol/tls"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/imannamdari/xray-core/common/errors"
+	ptls "github.com/imannamdari/xray-core/common/protocol/tls"
 	"golang.org/x/crypto/hkdf"
 )
 

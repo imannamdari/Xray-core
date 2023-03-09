@@ -1,6 +1,6 @@
 package encoding
 
-//go:generate go run github.com/xtls/xray-core/common/errors/errorgen
+//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
 
 import (
 	"bytes"
@@ -13,16 +13,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xtls/xray-core/common/buf"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/protocol"
-	"github.com/xtls/xray-core/common/session"
-	"github.com/xtls/xray-core/common/signal"
-	"github.com/xtls/xray-core/features/stats"
-	"github.com/xtls/xray-core/proxy/vless"
-	"github.com/xtls/xray-core/transport/internet/stat"
-	"github.com/xtls/xray-core/transport/internet/tls"
+	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/common/protocol"
+	"github.com/imannamdari/xray-core/common/session"
+	"github.com/imannamdari/xray-core/common/signal"
+	"github.com/imannamdari/xray-core/features/stats"
+	"github.com/imannamdari/xray-core/proxy/vless"
+	"github.com/imannamdari/xray-core/transport/internet/stat"
+	"github.com/imannamdari/xray-core/transport/internet/tls"
 )
 
 const (
@@ -485,7 +485,7 @@ func XtlsPadding(b *buf.Buffer, command byte, userUUID *[]byte, longPadding bool
 		}
 		paddingLen = int32(l.Int64())
 	}
-	if paddingLen > buf.Size - 21 - contentLen {
+	if paddingLen > buf.Size-21-contentLen {
 		paddingLen = buf.Size - 21 - contentLen
 	}
 	newbuffer := buf.New()

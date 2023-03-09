@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/dice"
 	"github.com/miekg/dns"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/dice"
 )
 
 type DNS struct {

@@ -1,9 +1,9 @@
 package router
 
 import (
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/features/outbound"
-	"github.com/xtls/xray-core/features/routing"
+	"github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/features/outbound"
+	"github.com/imannamdari/xray-core/features/routing"
 )
 
 // CIDRList is an alias of []*CIDR to provide sort.Interface.
