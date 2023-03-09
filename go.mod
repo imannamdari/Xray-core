@@ -1,6 +1,6 @@
 module github.com/imannamdari/xray-core
 
-go 1.20
+go 1.19
 
 replace github.com/refraction-networking/utls => github.com/xtls/utls v1.2.3
 
@@ -21,7 +21,7 @@ require (
 	github.com/seiflotfy/cuckoofilter v0.0.0-20220411075957-e3b120b3f5fb
 	github.com/stretchr/testify v1.8.2
 	github.com/v2fly/ss-bloomring v0.0.0-20210312155135-28617310f63e
-	github.com/xtls/reality v0.0.0-20230308170557-1c3141866eb7
+	github.com/xtls/reality v0.0.0-20230309125256-0d0713b108c8
 	go.starlark.net v0.0.0-20230128213706-3f75dec8e403
 	golang.org/x/crypto v0.6.0
 	golang.org/x/net v0.7.0
