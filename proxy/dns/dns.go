@@ -6,20 +6,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/buf"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	dns_proto "github.com/xtls/xray-core/common/protocol/dns"
-	"github.com/xtls/xray-core/common/session"
-	"github.com/xtls/xray-core/common/signal"
-	"github.com/xtls/xray-core/common/task"
-	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/features/dns"
-	"github.com/xtls/xray-core/features/policy"
-	"github.com/xtls/xray-core/transport"
-	"github.com/xtls/xray-core/transport/internet"
-	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/net"
+	dns_proto "github.com/imannamdari/xray-core/common/protocol/dns"
+	"github.com/imannamdari/xray-core/common/session"
+	"github.com/imannamdari/xray-core/common/signal"
+	"github.com/imannamdari/xray-core/common/task"
+	"github.com/imannamdari/xray-core/core"
+	"github.com/imannamdari/xray-core/features/dns"
+	"github.com/imannamdari/xray-core/features/policy"
+	"github.com/imannamdari/xray-core/transport"
+	"github.com/imannamdari/xray-core/transport/internet"
+	"github.com/imannamdari/xray-core/transport/internet/stat"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -49,7 +49,7 @@ type Handler struct {
 	server          net.Destination
 	timeout         time.Duration
 	nonIPQuery      string
-	blockTypes       []int32
+	blockTypes      []int32
 }
 
 func (h *Handler) Init(config *Config, dnsClient dns.Client, policyManager policy.Manager) error {

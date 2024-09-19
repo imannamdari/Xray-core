@@ -3,21 +3,21 @@ package core_test
 import (
 	"testing"
 
-	"github.com/xtls/xray-core/app/dispatcher"
-	"github.com/xtls/xray-core/app/proxyman"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/protocol"
-	"github.com/xtls/xray-core/common/serial"
-	"github.com/xtls/xray-core/common/uuid"
-	. "github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/features/dns"
-	"github.com/xtls/xray-core/features/dns/localdns"
-	_ "github.com/xtls/xray-core/main/distro/all"
-	"github.com/xtls/xray-core/proxy/dokodemo"
-	"github.com/xtls/xray-core/proxy/vmess"
-	"github.com/xtls/xray-core/proxy/vmess/outbound"
-	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/imannamdari/xray-core/app/dispatcher"
+	"github.com/imannamdari/xray-core/app/proxyman"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/common/protocol"
+	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/imannamdari/xray-core/common/uuid"
+	. "github.com/imannamdari/xray-core/core"
+	"github.com/imannamdari/xray-core/features/dns"
+	"github.com/imannamdari/xray-core/features/dns/localdns"
+	_ "github.com/imannamdari/xray-core/main/distro/all"
+	"github.com/imannamdari/xray-core/proxy/dokodemo"
+	"github.com/imannamdari/xray-core/proxy/vmess"
+	"github.com/imannamdari/xray-core/proxy/vmess/outbound"
+	"github.com/imannamdari/xray-core/testing/servers/tcp"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -54,8 +54,8 @@ func TestXrayClose(t *testing.T) {
 					Listen: net.NewIPOrDomain(net.LocalHostIP),
 				}),
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
-					Address: net.NewIPOrDomain(net.LocalHostIP),
-					Port:    uint32(0),
+					Address:  net.NewIPOrDomain(net.LocalHostIP),
+					Port:     uint32(0),
 					Networks: []net.Network{net.Network_TCP},
 				}),
 			},

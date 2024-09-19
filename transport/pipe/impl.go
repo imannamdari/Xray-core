@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/buf"
-	"github.com/xtls/xray-core/common/signal"
-	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/imannamdari/xray-core/common/signal"
+	"github.com/imannamdari/xray-core/common/signal/done"
 )
 
 type state byte
@@ -47,11 +47,11 @@ var (
 )
 
 func (p *pipe) Len() int32 {
-    data := p.data
-    if data == nil {
-        return 0
-    }
-    return data.Len()
+	data := p.data
+	if data == nil {
+		return 0
+	}
+	return data.Len()
 }
 
 func (p *pipe) getState(forRead bool) error {

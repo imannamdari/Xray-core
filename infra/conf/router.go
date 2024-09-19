@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xtls/xray-core/app/router"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/platform/filesystem"
-	"github.com/xtls/xray-core/common/serial"
+	"github.com/imannamdari/xray-core/app/router"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/common/platform/filesystem"
+	"github.com/imannamdari/xray-core/common/serial"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -71,9 +71,9 @@ func (r *BalancingRule) Build() (*router.BalancingRule, error) {
 }
 
 type RouterConfig struct {
-	RuleList       []json.RawMessage  `json:"rules"`
-	DomainStrategy *string            `json:"domainStrategy"`
-	Balancers      []*BalancingRule   `json:"balancers"`
+	RuleList       []json.RawMessage `json:"rules"`
+	DomainStrategy *string           `json:"domainStrategy"`
+	Balancers      []*BalancingRule  `json:"balancers"`
 
 	DomainMatcher string `json:"domainMatcher"`
 }

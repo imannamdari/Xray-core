@@ -11,9 +11,9 @@ import (
 
 	"golang.zx2c4.com/wireguard/conn"
 
-	xnet "github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/features/dns"
-	"github.com/xtls/xray-core/transport/internet"
+	xnet "github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/features/dns"
+	"github.com/imannamdari/xray-core/transport/internet"
 )
 
 type netReadInfo struct {

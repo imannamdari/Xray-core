@@ -1,26 +1,85 @@
 package tls
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"time"
-	"bytes"
 
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/ocsp"
-	"github.com/xtls/xray-core/common/platform/filesystem"
-	"github.com/xtls/xray-core/common/protocol/tls/cert"
-	"github.com/xtls/xray-core/transport/internet"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/common/ocsp"
+	"github.com/imannamdari/xray-core/common/platform/filesystem"
+	"github.com/imannamdari/xray-core/common/protocol/tls/cert"
+	"github.com/imannamdari/xray-core/transport/internet"
+	"github.com/miekg/dns"
 )
 
 var globalSessionCache = tls.NewLRUClientSessionCache(128)
+
+// ech key for ech enabled config. tls config use this for tls handshake.
+var ECH string
+
+func (c *Config) UpdateECHEvery(d time.Duration) {
+	for range time.Tick(d) {
+		ech, err := c.FetchECH()
+		fmt.Printf("new ech = %s\n", ech)
+		if err != nil {
+			fmt.Println("failed to get ech")
+			errors.LogWarningInner(context.Background(), err, "failed to get ech")
+		} else {
+			ECH = ech
+		}
+	}
+}
+
+// only support cloudflare ech
+func (c *Config) FetchECH() (string, error) {
+	dc := dns.Client{Timeout: 10 * time.Second}
+
+	d := dns.Fqdn("cloudflare-ech.com")
+	q := dns.Question{
+		Name:   d,
+		Qtype:  dns.TypeHTTPS,
+		Qclass: dns.ClassINET,
+	}
+
+	dnsAddr := "127.0.0.1:53"
+	if c.EchSetting != nil && c.EchSetting.DnsAddr != "" {
+		dnsAddr = c.EchSetting.DnsAddr
+	}
+
+	r, _, err := dc.Exchange(&dns.Msg{
+		MsgHdr: dns.MsgHdr{
+			Id:               dns.Id(),
+			RecursionDesired: true,
+		},
+		Question: []dns.Question{q},
+	}, dnsAddr)
+	if err != nil {
+		return "", err
+	}
+
+	for _, v := range r.Answer {
+		if vv, ok := v.(*dns.HTTPS); ok {
+			for _, vvv := range vv.SVCB.Value {
+				if vvv.Key().String() == "ech" {
+					return vvv.String(), nil
+				}
+			}
+		}
+	}
+
+	return "", errors.New("failed to find ech in response")
+}
 
 // ParseCertificate converts a cert.Certificate to Certificate.
 func ParseCertificate(c *cert.Certificate) *Certificate {
@@ -70,7 +129,7 @@ func (c *Config) BuildCertificates() []*tls.Certificate {
 			continue
 		}
 		index := len(certs) - 1
-		setupOcspTicker(entry, func(isReloaded, isOcspstapling bool){
+		setupOcspTicker(entry, func(isReloaded, isOcspstapling bool) {
 			cert := certs[index]
 			if isReloaded {
 				if newKeyPair := getX509KeyPair(); newKeyPair != nil {
@@ -162,7 +221,7 @@ func (c *Config) getCustomCA() []*Certificate {
 	for _, certificate := range c.Certificate {
 		if certificate.Usage == Certificate_AUTHORITY_ISSUE {
 			certs = append(certs, certificate)
-			setupOcspTicker(certificate, func(isReloaded, isOcspstapling bool){ })
+			setupOcspTicker(certificate, func(isReloaded, isOcspstapling bool) {})
 		}
 	}
 	return certs
@@ -320,6 +379,21 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		}
 	}
 
+	var echConfigs []tls.ECHConfig
+	if c.EnableEch {
+		echPEMKey := fmt.Sprintf("-----BEGIN ECH CONFIGS-----\n%s\n-----END ECH CONFIGS-----", ECH)
+
+		block, rest := pem.Decode([]byte(echPEMKey))
+		if block == nil || block.Type != "ECH CONFIGS" || len(rest) > 0 {
+			errors.LogErrorInner(context.Background(), err, "failed to PEM-decode the ECH configs")
+		}
+
+		echConfigs, err = tls.UnmarshalECHConfigs(block.Bytes)
+		if err != nil {
+			errors.LogErrorInner(context.Background(), err, "failed to unmarshal ECH configs")
+		}
+	}
+
 	config := &tls.Config{
 		ClientSessionCache:     globalSessionCache,
 		RootCAs:                root,
@@ -327,6 +401,8 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		NextProtos:             c.NextProtocol,
 		SessionTicketsDisabled: !c.EnableSessionResumption,
 		VerifyPeerCertificate:  c.verifyPeerCert,
+		ECHEnabled:             c.EnableEch,
+		ClientECHConfigs:       echConfigs,
 	}
 
 	for _, opt := range opts {

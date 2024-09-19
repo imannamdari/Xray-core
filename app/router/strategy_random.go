@@ -3,15 +3,15 @@ package router
 import (
 	"context"
 
-	"github.com/xtls/xray-core/app/observatory"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/dice"
-	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/features/extension"
+	"github.com/imannamdari/xray-core/app/observatory"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/dice"
+	"github.com/imannamdari/xray-core/core"
+	"github.com/imannamdari/xray-core/features/extension"
 )
 
 // RandomStrategy represents a random balancing strategy
-type RandomStrategy struct{
+type RandomStrategy struct {
 	FallbackTag string
 
 	ctx         context.Context

@@ -1,30 +1,33 @@
 package conf
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/platform/filesystem"
-	"github.com/xtls/xray-core/common/serial"
-	"github.com/xtls/xray-core/transport/internet"
-	httpheader "github.com/xtls/xray-core/transport/internet/headers/http"
-	"github.com/xtls/xray-core/transport/internet/http"
-	"github.com/xtls/xray-core/transport/internet/httpupgrade"
-	"github.com/xtls/xray-core/transport/internet/kcp"
-	"github.com/xtls/xray-core/transport/internet/reality"
-	"github.com/xtls/xray-core/transport/internet/splithttp"
-	"github.com/xtls/xray-core/transport/internet/tcp"
-	"github.com/xtls/xray-core/transport/internet/tls"
-	"github.com/xtls/xray-core/transport/internet/websocket"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/common/platform/filesystem"
+	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/imannamdari/xray-core/transport/internet"
+	httpheader "github.com/imannamdari/xray-core/transport/internet/headers/http"
+	"github.com/imannamdari/xray-core/transport/internet/http"
+	"github.com/imannamdari/xray-core/transport/internet/httpupgrade"
+	"github.com/imannamdari/xray-core/transport/internet/kcp"
+	"github.com/imannamdari/xray-core/transport/internet/reality"
+	"github.com/imannamdari/xray-core/transport/internet/splithttp"
+	"github.com/imannamdari/xray-core/transport/internet/tcp"
+	"github.com/imannamdari/xray-core/transport/internet/tls"
+	"github.com/imannamdari/xray-core/transport/internet/websocket"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -411,6 +414,8 @@ type TLSConfig struct {
 	PinnedPeerCertificateChainSha256     *[]string        `json:"pinnedPeerCertificateChainSha256"`
 	PinnedPeerCertificatePublicKeySha256 *[]string        `json:"pinnedPeerCertificatePublicKeySha256"`
 	MasterKeyLog                         string           `json:"masterKeyLog"`
+	EnableEch                            bool             `json:"enableEch"`
+	EchSetting                           *TLSEchSetting   `json:"echSetting"`
 }
 
 // Build implements Buildable.
@@ -467,7 +472,39 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 
 	config.MasterKeyLog = c.MasterKeyLog
 
+	config.EnableEch = c.EnableEch
+	if c.EchSetting != nil {
+		config.EchSetting, _ = c.EchSetting.Build()
+	}
+
+	// handle ech
+	if config.EnableEch {
+		ech, err := config.FetchECH()
+		if err != nil {
+			fmt.Println("failed to get first ech")
+			errors.LogErrorInner(context.Background(), err, "failed to get first ech")
+		} else {
+			tls.ECH = ech
+		}
+		fmt.Printf("new ech = %s\n", ech)
+		go config.UpdateECHEvery(15 * time.Minute)
+	}
+
 	return config, nil
+}
+
+type TLSEchSetting struct {
+	DnsAddr    string `json:"dnsAddr"`
+	InitEchKey string `json:"initEchKey"`
+}
+
+func (c *TLSEchSetting) Build() (*tls.ECHSetting, error) {
+	setting := new(tls.ECHSetting)
+
+	setting.DnsAddr = c.DnsAddr
+	setting.InitEchKey = c.InitEchKey
+
+	return setting, nil
 }
 
 type REALITYConfig struct {

@@ -3,9 +3,9 @@ package buf
 import (
 	"io"
 
-	"github.com/xtls/xray-core/common/bytespool"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
+	"github.com/imannamdari/xray-core/common/bytespool"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/net"
 )
 
 const (
@@ -218,7 +218,7 @@ func (b *Buffer) Cap() int32 {
 // NewWithSize creates a Buffer with 0 length and capacity with at least the given size.
 func NewWithSize(size int32) *Buffer {
 	return &Buffer{
-		v:         bytespool.Alloc(size),
+		v: bytespool.Alloc(size),
 	}
 }
 
