@@ -4,11 +4,12 @@ import (
 	"context"
 	"sync"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/net/cnc"
-	"github.com/imannamdari/xray-core/common/signal/done"
-	"github.com/imannamdari/xray-core/transport"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/net/cnc"
+	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/transport"
 )
 
 // OutboundListener is a net.Listener for listening gRPC connections.
@@ -31,7 +32,7 @@ func (l *OutboundListener) add(conn net.Conn) {
 func (l *OutboundListener) Accept() (net.Conn, error) {
 	select {
 	case <-l.done.Wait():
-		return nil, newError("listen closed")
+		return nil, errors.New("listen closed")
 	case c := <-l.buffer:
 		return c, nil
 	}

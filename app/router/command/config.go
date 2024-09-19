@@ -3,8 +3,8 @@ package command
 import (
 	"strings"
 
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/features/routing"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/features/routing"
 )
 
 // routingContext is an wrapper of protobuf RoutingContext as implementation of routing.Context and routing.Route.
@@ -26,6 +26,10 @@ func (c routingContext) GetTargetIPs() []net.IP {
 
 func (c routingContext) GetTargetPort() net.Port {
 	return net.Port(c.RoutingContext.GetTargetPort())
+}
+
+func (c routingContext) GetRuleTag() string {
+	return ""
 }
 
 // GetSkipDNSResolve is a mock implementation here to match the interface,

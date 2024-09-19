@@ -1,17 +1,18 @@
 package command
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
+//go:generate go run github.com/xtls/xray-core/common/errors/errorgen
 
 import (
 	"context"
 	"runtime"
 	"time"
 
-	"github.com/imannamdari/xray-core/app/stats"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/strmatcher"
-	"github.com/imannamdari/xray-core/core"
-	feature_stats "github.com/imannamdari/xray-core/features/stats"
+	"github.com/xtls/xray-core/app/stats"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/strmatcher"
+	"github.com/xtls/xray-core/core"
+	feature_stats "github.com/xtls/xray-core/features/stats"
 	grpc "google.golang.org/grpc"
 )
 
@@ -31,7 +32,7 @@ func NewStatsServer(manager feature_stats.Manager) StatsServiceServer {
 func (s *statsServer) GetStats(ctx context.Context, request *GetStatsRequest) (*GetStatsResponse, error) {
 	c := s.stats.GetCounter(request.Name)
 	if c == nil {
-		return nil, newError(request.Name, " not found.")
+		return nil, errors.New(request.Name, " not found.")
 	}
 	var value int64
 	if request.Reset_ {
@@ -57,7 +58,7 @@ func (s *statsServer) QueryStats(ctx context.Context, request *QueryStatsRequest
 
 	manager, ok := s.stats.(*stats.Manager)
 	if !ok {
-		return nil, newError("QueryStats only works its own stats.Manager.")
+		return nil, errors.New("QueryStats only works its own stats.Manager.")
 	}
 
 	manager.VisitCounters(func(name string, c feature_stats.Counter) bool {

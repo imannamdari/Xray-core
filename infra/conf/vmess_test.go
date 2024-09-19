@@ -3,13 +3,13 @@ package conf_test
 import (
 	"testing"
 
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/serial"
-	. "github.com/imannamdari/xray-core/infra/conf"
-	"github.com/imannamdari/xray-core/proxy/vmess"
-	"github.com/imannamdari/xray-core/proxy/vmess/inbound"
-	"github.com/imannamdari/xray-core/proxy/vmess/outbound"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/serial"
+	. "github.com/xtls/xray-core/infra/conf"
+	"github.com/xtls/xray-core/proxy/vmess"
+	"github.com/xtls/xray-core/proxy/vmess/inbound"
+	"github.com/xtls/xray-core/proxy/vmess/outbound"
 )
 
 func TestVMessOutbound(t *testing.T) {
@@ -105,7 +105,6 @@ func TestVMessInbound(t *testing.T) {
 				Detour: &inbound.DetourConfig{
 					To: "tag_to_detour",
 				},
-				SecureEncryptionOnly: true,
 			},
 		},
 	})

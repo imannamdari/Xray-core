@@ -6,19 +6,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/app/log"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/common"
-	clog "github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/dokodemo"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	"github.com/imannamdari/xray-core/proxy/shadowsocks_2022"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
-	"github.com/imannamdari/xray-core/testing/servers/udp"
 	"github.com/sagernet/sing-shadowsocks/shadowaead_2022"
+	"github.com/xtls/xray-core/app/log"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/common"
+	clog "github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/proxy/freedom"
+	"github.com/xtls/xray-core/proxy/shadowsocks_2022"
+	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/testing/servers/udp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -32,14 +32,22 @@ func TestShadowsocks2022Tcp(t *testing.T) {
 	}
 }
 
-func TestShadowsocks2022Udp(t *testing.T) {
-	for _, method := range shadowaead_2022.List {
-		password := make([]byte, 32)
-		rand.Read(password)
-		t.Run(method, func(t *testing.T) {
-			testShadowsocks2022Udp(t, method, base64.StdEncoding.EncodeToString(password))
-		})
-	}
+func TestShadowsocks2022UdpAES128(t *testing.T) {
+	password := make([]byte, 32)
+	rand.Read(password)
+	testShadowsocks2022Udp(t, shadowaead_2022.List[0], base64.StdEncoding.EncodeToString(password))
+}
+
+func TestShadowsocks2022UdpAES256(t *testing.T) {
+	password := make([]byte, 32)
+	rand.Read(password)
+	testShadowsocks2022Udp(t, shadowaead_2022.List[1], base64.StdEncoding.EncodeToString(password))
+}
+
+func TestShadowsocks2022UdpChacha(t *testing.T) {
+	password := make([]byte, 32)
+	rand.Read(password)
+	testShadowsocks2022Udp(t, shadowaead_2022.List[2], base64.StdEncoding.EncodeToString(password))
 }
 
 func testShadowsocks2022Tcp(t *testing.T, method string, password string) {
@@ -199,7 +207,7 @@ func testShadowsocks2022Udp(t *testing.T, method string, password string) {
 	defer CloseAllServers(servers)
 
 	var errGroup errgroup.Group
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 2; i++ {
 		errGroup.Go(testUDPConn(udpClientPort, 1024, time.Second*5))
 	}
 

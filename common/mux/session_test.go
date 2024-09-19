@@ -3,7 +3,7 @@ package mux_test
 import (
 	"testing"
 
-	. "github.com/imannamdari/xray-core/common/mux"
+	. "github.com/xtls/xray-core/common/mux"
 )
 
 func TestSessionManagerAdd(t *testing.T) {
@@ -44,7 +44,7 @@ func TestSessionManagerClose(t *testing.T) {
 	if m.CloseIfNoSession() {
 		t.Error("able to close")
 	}
-	m.Remove(s.ID)
+	m.Remove(false, s.ID)
 	if !m.CloseIfNoSession() {
 		t.Error("not able to close")
 	}

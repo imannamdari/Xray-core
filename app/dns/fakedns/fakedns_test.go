@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/uuid"
-	"github.com/imannamdari/xray-core/features/dns"
 	"github.com/stretchr/testify/assert"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/uuid"
+	"github.com/xtls/xray-core/features/dns"
 	"golang.org/x/sync/errgroup"
 )
 

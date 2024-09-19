@@ -4,10 +4,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/signal/done"
 )
 
 type ConnectionOption func(*connection)
@@ -51,8 +51,8 @@ func ConnectionOutputMulti(reader buf.Reader) ConnectionOption {
 func ConnectionOutputMultiUDP(reader buf.Reader) ConnectionOption {
 	return func(c *connection) {
 		c.reader = &buf.BufferedReader{
-			Reader:  reader,
-			Spliter: buf.SplitFirstBytes,
+			Reader:   reader,
+			Splitter: buf.SplitFirstBytes,
 		}
 	}
 }

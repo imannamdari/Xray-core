@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/uuid"
-	"github.com/imannamdari/xray-core/proxy/vmess"
-	. "github.com/imannamdari/xray-core/proxy/vmess/encoding"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/uuid"
+	"github.com/xtls/xray-core/proxy/vmess"
+	. "github.com/xtls/xray-core/proxy/vmess/encoding"
 )
 
 func toAccount(a *vmess.Account) protocol.Account {
@@ -41,7 +41,7 @@ func TestRequestSerialization(t *testing.T) {
 	}
 
 	buffer := buf.New()
-	client := NewClientSession(context.TODO(), true, protocol.DefaultIDHash, 0)
+	client := NewClientSession(context.TODO(), 0)
 	common.Must(client.EncodeRequestHeader(expectedRequest, buffer))
 
 	buffer2 := buf.New()
@@ -50,7 +50,7 @@ func TestRequestSerialization(t *testing.T) {
 	sessionHistory := NewSessionHistory()
 	defer common.Close(sessionHistory)
 
-	userValidator := vmess.NewTimedUserValidator(protocol.DefaultIDHash)
+	userValidator := vmess.NewTimedUserValidator()
 	userValidator.Add(user)
 	defer common.Close(userValidator)
 
@@ -90,7 +90,7 @@ func TestInvalidRequest(t *testing.T) {
 	}
 
 	buffer := buf.New()
-	client := NewClientSession(context.TODO(), true, protocol.DefaultIDHash, 0)
+	client := NewClientSession(context.TODO(), 0)
 	common.Must(client.EncodeRequestHeader(expectedRequest, buffer))
 
 	buffer2 := buf.New()
@@ -99,7 +99,7 @@ func TestInvalidRequest(t *testing.T) {
 	sessionHistory := NewSessionHistory()
 	defer common.Close(sessionHistory)
 
-	userValidator := vmess.NewTimedUserValidator(protocol.DefaultIDHash)
+	userValidator := vmess.NewTimedUserValidator()
 	userValidator.Add(user)
 	defer common.Close(userValidator)
 
@@ -130,7 +130,7 @@ func TestMuxRequest(t *testing.T) {
 	}
 
 	buffer := buf.New()
-	client := NewClientSession(context.TODO(), true, protocol.DefaultIDHash, 0)
+	client := NewClientSession(context.TODO(), 0)
 	common.Must(client.EncodeRequestHeader(expectedRequest, buffer))
 
 	buffer2 := buf.New()
@@ -139,7 +139,7 @@ func TestMuxRequest(t *testing.T) {
 	sessionHistory := NewSessionHistory()
 	defer common.Close(sessionHistory)
 
-	userValidator := vmess.NewTimedUserValidator(protocol.DefaultIDHash)
+	userValidator := vmess.NewTimedUserValidator()
 	userValidator.Add(user)
 	defer common.Close(userValidator)
 

@@ -5,17 +5,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/app/dns"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/app/router"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/blackhole"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	"github.com/imannamdari/xray-core/proxy/socks"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/app/dns"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/app/router"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/blackhole"
+	"github.com/xtls/xray-core/proxy/freedom"
+	"github.com/xtls/xray-core/proxy/socks"
+	"github.com/xtls/xray-core/testing/servers/tcp"
 	xproxy "golang.org/x/net/proxy"
 )
 
@@ -31,18 +31,26 @@ func TestResolveIP(t *testing.T) {
 	serverConfig := &core.Config{
 		App: []*serial.TypedMessage{
 			serial.ToTypedMessage(&dns.Config{
-				Hosts: map[string]*net.IPOrDomain{
-					"google.com": net.NewIPOrDomain(dest.Address),
+				StaticHosts: []*dns.Config_HostMapping{
+					{
+						Type:   dns.DomainMatchingType_Full,
+						Domain: "google.com",
+						Ip:     [][]byte{dest.Address.IP()},
+					},
 				},
 			}),
 			serial.ToTypedMessage(&router.Config{
 				DomainStrategy: router.Config_IpIfNonMatch,
 				Rule: []*router.RoutingRule{
 					{
-						Cidr: []*router.CIDR{
+						Geoip: []*router.GeoIP{
 							{
-								Ip:     []byte{127, 0, 0, 0},
-								Prefix: 8,
+								Cidr: []*router.CIDR{
+									{
+										Ip:     []byte{127, 0, 0, 0},
+										Prefix: 8,
+									},
+								},
 							},
 						},
 						TargetTag: &router.RoutingRule_Tag{

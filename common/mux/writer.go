@@ -1,11 +1,11 @@
 package mux
 
 import (
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/serial"
 )
 
 type Writer struct {
@@ -15,15 +15,17 @@ type Writer struct {
 	followup     bool
 	hasError     bool
 	transferType protocol.TransferType
+	globalID     [8]byte
 }
 
-func NewWriter(id uint16, dest net.Destination, writer buf.Writer, transferType protocol.TransferType) *Writer {
+func NewWriter(id uint16, dest net.Destination, writer buf.Writer, transferType protocol.TransferType, globalID [8]byte) *Writer {
 	return &Writer{
 		id:           id,
 		dest:         dest,
 		writer:       writer,
 		followup:     false,
 		transferType: transferType,
+		globalID:     globalID,
 	}
 }
 
@@ -40,6 +42,7 @@ func (w *Writer) getNextFrameMeta() FrameMetadata {
 	meta := FrameMetadata{
 		SessionID: w.id,
 		Target:    w.dest,
+		GlobalID:  w.globalID,
 	}
 
 	if w.followup {

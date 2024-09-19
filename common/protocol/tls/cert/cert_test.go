@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/task"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/task"
 )
 
 func TestGenerate(t *testing.T) {
@@ -41,7 +42,7 @@ func generate(domainNames []string, isCA bool, jsonOutput bool, fileOutput strin
 
 	cert, err := Generate(nil, opts...)
 	if err != nil {
-		return newError("failed to generate TLS certificate").Base(err)
+		return errors.New("failed to generate TLS certificate").Base(err)
 	}
 
 	if jsonOutput {

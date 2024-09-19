@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/imannamdari/xray-core/common"
-	. "github.com/imannamdari/xray-core/common/strmatcher"
+	"github.com/xtls/xray-core/common"
+	. "github.com/xtls/xray-core/common/strmatcher"
 )
 
 func BenchmarkACAutomaton(b *testing.B) {

@@ -1,15 +1,16 @@
 package vless
 
 import (
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/uuid"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/uuid"
 )
 
 // AsAccount implements protocol.Account.AsAccount().
 func (a *Account) AsAccount() (protocol.Account, error) {
 	id, err := uuid.ParseString(a.Id)
 	if err != nil {
-		return nil, newError("failed to parse ID").Base(err).AtError()
+		return nil, errors.New("failed to parse ID").Base(err).AtError()
 	}
 	return &MemoryAccount{
 		ID:         protocol.NewID(id),

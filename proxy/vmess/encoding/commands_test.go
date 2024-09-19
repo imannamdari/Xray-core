@@ -4,19 +4,18 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/uuid"
-	. "github.com/imannamdari/xray-core/proxy/vmess/encoding"
 	"github.com/stretchr/testify/assert"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/uuid"
+	. "github.com/xtls/xray-core/proxy/vmess/encoding"
 )
 
 func TestSwitchAccount(t *testing.T) {
 	sa := &protocol.CommandSwitchAccount{
 		Port:     1234,
 		ID:       uuid.New(),
-		AlterIds: 1024,
 		Level:    128,
 		ValidMin: 16,
 	}
@@ -40,7 +39,6 @@ func TestSwitchAccountBugOffByOne(t *testing.T) {
 	sa := &protocol.CommandSwitchAccount{
 		Port:     1234,
 		ID:       uuid.New(),
-		AlterIds: 1024,
 		Level:    128,
 		ValidMin: 16,
 	}

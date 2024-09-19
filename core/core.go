@@ -9,19 +9,19 @@
 // connections.
 package core
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
+//go:generate go run github.com/xtls/xray-core/common/errors/errorgen
 
 import (
 	"fmt"
 	"runtime"
 
-	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/serial"
 )
 
 var (
-	Version_x byte = 1
-	Version_y byte = 7
-	Version_z byte = 5
+	Version_x byte = 24
+	Version_y byte = 9
+	Version_z byte = 19
 )
 
 var (

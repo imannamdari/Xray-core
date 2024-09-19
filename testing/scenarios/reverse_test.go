@@ -4,25 +4,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/app/log"
-	"github.com/imannamdari/xray-core/app/policy"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/app/reverse"
-	"github.com/imannamdari/xray-core/app/router"
-	"github.com/imannamdari/xray-core/common"
-	clog "github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/common/uuid"
-	core "github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/blackhole"
-	"github.com/imannamdari/xray-core/proxy/dokodemo"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	"github.com/imannamdari/xray-core/proxy/vmess"
-	"github.com/imannamdari/xray-core/proxy/vmess/inbound"
-	"github.com/imannamdari/xray-core/proxy/vmess/outbound"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/app/log"
+	"github.com/xtls/xray-core/app/policy"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/app/reverse"
+	"github.com/xtls/xray-core/app/router"
+	"github.com/xtls/xray-core/common"
+	clog "github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/uuid"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/blackhole"
+	"github.com/xtls/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/proxy/freedom"
+	"github.com/xtls/xray-core/proxy/vmess"
+	"github.com/xtls/xray-core/proxy/vmess/inbound"
+	"github.com/xtls/xray-core/proxy/vmess/outbound"
+	"github.com/xtls/xray-core/testing/servers/tcp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -78,9 +78,7 @@ func TestReverseProxy(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 			{
@@ -145,9 +143,7 @@ func TestReverseProxy(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -261,9 +257,7 @@ func TestReverseProxyLongRunning(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 			{
@@ -342,9 +336,7 @@ func TestReverseProxyLongRunning(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},

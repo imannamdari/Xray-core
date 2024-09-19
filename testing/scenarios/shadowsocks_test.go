@@ -4,19 +4,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/app/log"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/common"
-	clog "github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/dokodemo"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	"github.com/imannamdari/xray-core/proxy/shadowsocks"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
-	"github.com/imannamdari/xray-core/testing/servers/udp"
+	"github.com/xtls/xray-core/app/log"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/common"
+	clog "github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/proxy/freedom"
+	"github.com/xtls/xray-core/proxy/shadowsocks"
+	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/testing/servers/udp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -289,7 +289,7 @@ func TestShadowsocksAES128GCMUDP(t *testing.T) {
 	defer CloseAllServers(servers)
 
 	var errGroup errgroup.Group
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 2; i++ {
 		errGroup.Go(testUDPConn(clientPort, 1024, time.Second*5))
 	}
 	if err := errGroup.Wait(); err != nil {
@@ -391,7 +391,7 @@ func TestShadowsocksAES128GCMUDPMux(t *testing.T) {
 	defer CloseAllServers(servers)
 
 	var errGroup errgroup.Group
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 2; i++ {
 		errGroup.Go(testUDPConn(clientPort, 1024, time.Second*5))
 	}
 	if err := errGroup.Wait(); err != nil {

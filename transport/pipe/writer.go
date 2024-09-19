@@ -1,7 +1,7 @@
 package pipe
 
 import (
-	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/buf"
 )
 
 // Writer is a buf.Writer that writes data into a pipe.
@@ -17,6 +17,10 @@ func (w *Writer) WriteMultiBuffer(mb buf.MultiBuffer) error {
 // Close implements io.Closer. After the pipe is closed, writing to the pipe will return io.ErrClosedPipe, while reading will return io.EOF.
 func (w *Writer) Close() error {
 	return w.pipe.Close()
+}
+
+func (w *Writer) Len() int32 {
+    return w.pipe.Len()
 }
 
 // Interrupt implements common.Interruptible.

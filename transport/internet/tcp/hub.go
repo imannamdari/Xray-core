@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/reality"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
 	goreality "github.com/xtls/reality"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/reality"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
 )
 
 // Listener is an internet.Listener that listens for TCP connections.
@@ -24,7 +24,6 @@ type Listener struct {
 	authConfig    internet.ConnectionAuthenticator
 	config        *Config
 	addConn       internet.ConnHandler
-	locker        *internet.FileLocker // for unix domain socket
 }
 
 // ListenTCP creates a new Listener based on configurations.
@@ -48,26 +47,22 @@ func ListenTCP(ctx context.Context, address net.Address, port net.Port, streamSe
 			Net:  "unix",
 		}, streamSettings.SocketSettings)
 		if err != nil {
-			return nil, newError("failed to listen Unix Domain Socket on ", address).Base(err)
+			return nil, errors.New("failed to listen Unix Domain Socket on ", address).Base(err)
 		}
-		newError("listening Unix Domain Socket on ", address).WriteToLog(session.ExportIDToError(ctx))
-		locker := ctx.Value(address.Domain())
-		if locker != nil {
-			l.locker = locker.(*internet.FileLocker)
-		}
+		errors.LogInfo(ctx, "listening Unix Domain Socket on ", address)
 	} else {
 		listener, err = internet.ListenSystem(ctx, &net.TCPAddr{
 			IP:   address.IP(),
 			Port: int(port),
 		}, streamSettings.SocketSettings)
 		if err != nil {
-			return nil, newError("failed to listen TCP on ", address, ":", port).Base(err)
+			return nil, errors.New("failed to listen TCP on ", address, ":", port).Base(err)
 		}
-		newError("listening TCP on ", address, ":", port).WriteToLog(session.ExportIDToError(ctx))
+		errors.LogInfo(ctx, "listening TCP on ", address, ":", port)
 	}
 
 	if streamSettings.SocketSettings != nil && streamSettings.SocketSettings.AcceptProxyProtocol {
-		newError("accepting PROXY protocol").AtWarning().WriteToLog(session.ExportIDToError(ctx))
+		errors.LogWarning(ctx, "accepting PROXY protocol")
 	}
 
 	l.listener = listener
@@ -82,11 +77,11 @@ func ListenTCP(ctx context.Context, address net.Address, port net.Port, streamSe
 	if tcpSettings.HeaderSettings != nil {
 		headerConfig, err := tcpSettings.HeaderSettings.GetInstance()
 		if err != nil {
-			return nil, newError("invalid header settings").Base(err).AtError()
+			return nil, errors.New("invalid header settings").Base(err).AtError()
 		}
 		auth, err := internet.CreateConnectionAuthenticator(headerConfig)
 		if err != nil {
-			return nil, newError("invalid header settings.").Base(err).AtError()
+			return nil, errors.New("invalid header settings.").Base(err).AtError()
 		}
 		l.authConfig = auth
 	}
@@ -103,7 +98,7 @@ func (v *Listener) keepAccepting() {
 			if strings.Contains(errStr, "closed") {
 				break
 			}
-			newError("failed to accepted raw connections").Base(err).AtWarning().WriteToLog()
+			errors.LogWarningInner(context.Background(), err, "failed to accepted raw connections")
 			if strings.Contains(errStr, "too many") {
 				time.Sleep(time.Millisecond * 500)
 			}
@@ -114,7 +109,7 @@ func (v *Listener) keepAccepting() {
 				conn = tls.Server(conn, v.tlsConfig)
 			} else if v.realityConfig != nil {
 				if conn, err = reality.Server(conn, v.realityConfig); err != nil {
-					newError(err).AtInfo().WriteToLog()
+					errors.LogInfo(context.Background(), err.Error())
 					return
 				}
 			}
@@ -133,9 +128,6 @@ func (v *Listener) Addr() net.Addr {
 
 // Close implements internet.Listener.Close.
 func (v *Listener) Close() error {
-	if v.locker != nil {
-		v.locker.Release()
-	}
 	return v.listener.Close()
 }
 

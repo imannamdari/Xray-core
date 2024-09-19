@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xray.proxy.shadowsocks_2022;
 option csharp_namespace = "Xray.Proxy.Shadowsocks2022";
-option go_package = "github.com/imannamdari/xray-core/proxy/shadowsocks_2022";
+option go_package = "github.com/xtls/xray-core/proxy/shadowsocks_2022";
 option java_package = "com.xray.proxy.shadowsocks_2022";
 option java_multiple_files = true;
 
@@ -51,4 +51,5 @@ message ClientConfig {
   string method = 3;
   string key = 4;
   bool udp_over_tcp = 5;
+  uint32 udp_over_tcp_version = 6;
 }

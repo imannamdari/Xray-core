@@ -3,15 +3,16 @@ package conf
 import (
 	"sort"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/imannamdari/xray-core/transport/internet/headers/dns"
-	"github.com/imannamdari/xray-core/transport/internet/headers/http"
-	"github.com/imannamdari/xray-core/transport/internet/headers/noop"
-	"github.com/imannamdari/xray-core/transport/internet/headers/srtp"
-	"github.com/imannamdari/xray-core/transport/internet/headers/tls"
-	"github.com/imannamdari/xray-core/transport/internet/headers/utp"
-	"github.com/imannamdari/xray-core/transport/internet/headers/wechat"
-	"github.com/imannamdari/xray-core/transport/internet/headers/wireguard"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/transport/internet/headers/dns"
+	"github.com/xtls/xray-core/transport/internet/headers/http"
+	"github.com/xtls/xray-core/transport/internet/headers/noop"
+	"github.com/xtls/xray-core/transport/internet/headers/srtp"
+	"github.com/xtls/xray-core/transport/internet/headers/tls"
+	"github.com/xtls/xray-core/transport/internet/headers/utp"
+	"github.com/xtls/xray-core/transport/internet/headers/wechat"
+	"github.com/xtls/xray-core/transport/internet/headers/wireguard"
+	"google.golang.org/protobuf/proto"
 )
 
 type NoOpAuthenticator struct{}
@@ -133,7 +134,7 @@ func (v *AuthenticatorRequest) Build() (*http.RequestConfig, error) {
 		for _, key := range headerNames {
 			value := v.Headers[key]
 			if value == nil {
-				return nil, newError("empty HTTP header value: " + key).AtError()
+				return nil, errors.New("empty HTTP header value: " + key).AtError()
 			}
 			config.Header = append(config.Header, &http.Header{
 				Name:  key,
@@ -201,7 +202,7 @@ func (v *AuthenticatorResponse) Build() (*http.ResponseConfig, error) {
 		for _, key := range headerNames {
 			value := v.Headers[key]
 			if value == nil {
-				return nil, newError("empty HTTP header value: " + key).AtError()
+				return nil, errors.New("empty HTTP header value: " + key).AtError()
 			}
 			config.Header = append(config.Header, &http.Header{
 				Name:  key,

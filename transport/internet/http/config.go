@@ -1,9 +1,9 @@
 package http
 
 import (
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/dice"
-	"github.com/imannamdari/xray-core/transport/internet"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/dice"
+	"github.com/xtls/xray-core/transport/internet"
 )
 
 const protocolName = "http"
@@ -16,9 +16,12 @@ func (c *Config) getHosts() []string {
 }
 
 func (c *Config) isValidHost(host string) bool {
+	if len(c.Host) == 0 {
+		return true
+	}
 	hosts := c.getHosts()
 	for _, h := range hosts {
-		if h == host {
+		if internet.IsValidHTTPHost(host, h) {
 			return true
 		}
 	}

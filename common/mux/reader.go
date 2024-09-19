@@ -3,10 +3,11 @@ package mux
 import (
 	"io"
 
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/crypto"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/crypto"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
 )
 
 // PacketReader is an io.Reader that reads whole chunk of Mux frames every time.
@@ -37,7 +38,7 @@ func (r *PacketReader) ReadMultiBuffer() (buf.MultiBuffer, error) {
 	}
 
 	if size > buf.Size {
-		return nil, newError("packet size too large: ", size)
+		return nil, errors.New("packet size too large: ", size)
 	}
 
 	b := buf.New()

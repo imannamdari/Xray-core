@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/net/cnc"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/transport/internet/udp"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/net/cnc"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/transport/internet/udp"
 )
 
 // CreateObject creates a new object based on the given Xray instance and config. The Xray instance may be nil.
@@ -50,7 +51,7 @@ func Dial(ctx context.Context, v *Instance, dest net.Destination) (net.Conn, err
 
 	dispatcher := v.GetFeature(routing.DispatcherType())
 	if dispatcher == nil {
-		return nil, newError("routing.Dispatcher is not registered in Xray core")
+		return nil, errors.New("routing.Dispatcher is not registered in Xray core")
 	}
 
 	r, err := dispatcher.(routing.Dispatcher).Dispatch(ctx, dest)
@@ -77,7 +78,7 @@ func DialUDP(ctx context.Context, v *Instance) (net.PacketConn, error) {
 
 	dispatcher := v.GetFeature(routing.DispatcherType())
 	if dispatcher == nil {
-		return nil, newError("routing.Dispatcher is not registered in Xray core")
+		return nil, errors.New("routing.Dispatcher is not registered in Xray core")
 	}
 	return udp.DialDispatcher(ctx, dispatcher.(routing.Dispatcher))
 }

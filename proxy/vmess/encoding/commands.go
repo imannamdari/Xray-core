@@ -4,20 +4,21 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/common/uuid"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/uuid"
 )
 
 var (
-	ErrCommandTooLarge     = newError("Command too large.")
-	ErrCommandTypeMismatch = newError("Command type mismatch.")
-	ErrInvalidAuth         = newError("Invalid auth.")
-	ErrInsufficientLength  = newError("Insufficient length.")
-	ErrUnknownCommand      = newError("Unknown command.")
+	ErrCommandTooLarge     = errors.New("Command too large.")
+	ErrCommandTypeMismatch = errors.New("Command type mismatch.")
+	ErrInvalidAuth         = errors.New("Invalid auth.")
+	ErrInsufficientLength  = errors.New("Insufficient length.")
+	ErrUnknownCommand      = errors.New("Unknown command.")
 )
 
 func MarshalCommand(command interface{}, writer io.Writer) error {
@@ -101,7 +102,7 @@ func (f *CommandSwitchAccountFactory) Marshal(command interface{}, writer io.Wri
 
 	idBytes := cmd.ID.Bytes()
 	common.Must2(writer.Write(idBytes))
-	common.Must2(serial.WriteUint16(writer, cmd.AlterIds))
+	common.Must2(serial.WriteUint16(writer, 0)) // compatible with legacy alterId
 	common.Must2(writer.Write([]byte{byte(cmd.Level)}))
 
 	common.Must2(writer.Write([]byte{cmd.ValidMin}))
@@ -130,12 +131,7 @@ func (f *CommandSwitchAccountFactory) Unmarshal(data []byte) (interface{}, error
 		return nil, ErrInsufficientLength
 	}
 	cmd.ID, _ = uuid.ParseBytes(data[idStart : idStart+16])
-	alterIDStart := idStart + 16
-	if len(data) < alterIDStart+2 {
-		return nil, ErrInsufficientLength
-	}
-	cmd.AlterIds = binary.BigEndian.Uint16(data[alterIDStart : alterIDStart+2])
-	levelStart := alterIDStart + 2
+	levelStart := idStart + 16 + 2
 	if len(data) < levelStart+1 {
 		return nil, ErrInsufficientLength
 	}

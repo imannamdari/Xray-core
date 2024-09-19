@@ -6,26 +6,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/protocol/tls/cert"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/common/uuid"
-	core "github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/dokodemo"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	"github.com/imannamdari/xray-core/proxy/vmess"
-	"github.com/imannamdari/xray-core/proxy/vmess/inbound"
-	"github.com/imannamdari/xray-core/proxy/vmess/outbound"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
-	"github.com/imannamdari/xray-core/testing/servers/udp"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/grpc"
-	"github.com/imannamdari/xray-core/transport/internet/http"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
-	"github.com/imannamdari/xray-core/transport/internet/websocket"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/protocol/tls/cert"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/uuid"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/proxy/freedom"
+	"github.com/xtls/xray-core/proxy/vmess"
+	"github.com/xtls/xray-core/proxy/vmess/inbound"
+	"github.com/xtls/xray-core/proxy/vmess/outbound"
+	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/testing/servers/udp"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/grpc"
+	"github.com/xtls/xray-core/transport/internet/http"
+	"github.com/xtls/xray-core/transport/internet/tls"
+	"github.com/xtls/xray-core/transport/internet/websocket"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -83,9 +83,7 @@ func TestSimpleTLSConnection(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -200,9 +198,7 @@ func TestAutoIssuingCertificate(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -307,9 +303,7 @@ func TestTLSOverKCP(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -409,9 +403,7 @@ func TestTLSOverWebSocket(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -530,9 +522,7 @@ func TestHTTP2(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -651,9 +641,7 @@ func TestGRPC(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -769,9 +757,7 @@ func TestGRPCMultiMode(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -882,9 +868,7 @@ func TestSimpleTLSConnectionPinned(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -986,9 +970,7 @@ func TestSimpleTLSConnectionPinnedWrongCert(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -1089,9 +1071,7 @@ func TestUTLSConnectionPinned(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -1194,9 +1174,7 @@ func TestUTLSConnectionPinnedWrongCert(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},

@@ -3,8 +3,8 @@ package conf
 import (
 	"strings"
 
-	"github.com/imannamdari/xray-core/app/log"
-	clog "github.com/imannamdari/xray-core/common/log"
+	"github.com/xtls/xray-core/app/log"
+	clog "github.com/xtls/xray-core/common/log"
 )
 
 func DefaultLogConfig() *log.Config {
@@ -16,10 +16,11 @@ func DefaultLogConfig() *log.Config {
 }
 
 type LogConfig struct {
-	AccessLog string `json:"access"`
-	ErrorLog  string `json:"error"`
-	LogLevel  string `json:"loglevel"`
-	DNSLog    bool   `json:"dnsLog"`
+	AccessLog   string `json:"access"`
+	ErrorLog    string `json:"error"`
+	LogLevel    string `json:"loglevel"`
+	DNSLog      bool   `json:"dnsLog"`
+	MaskAddress string `json:"maskAddress"`
 }
 
 func (v *LogConfig) Build() *log.Config {
@@ -59,5 +60,6 @@ func (v *LogConfig) Build() *log.Config {
 	default:
 		config.ErrorLogLevel = clog.Severity_Warning
 	}
+	config.MaskAddress = v.MaskAddress
 	return config
 }

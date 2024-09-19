@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	. "github.com/imannamdari/xray-core/app/stats"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/features/stats"
+	. "github.com/xtls/xray-core/app/stats"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/features/stats"
 )
 
 func TestStatsCounter(t *testing.T) {
@@ -18,7 +18,7 @@ func TestStatsCounter(t *testing.T) {
 	common.Must(err)
 
 	if v := c.Add(1); v != 1 {
-		t.Fatal("unpexcted Add(1) return: ", v, ", wanted ", 1)
+		t.Fatal("unexpected Add(1) return: ", v, ", wanted ", 1)
 	}
 
 	if v := c.Set(0); v != 1 {

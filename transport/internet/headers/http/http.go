@@ -1,6 +1,6 @@
 package http
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
+//go:generate go run github.com/xtls/xray-core/common/errors/errorgen
 
 import (
 	"bufio"
@@ -12,8 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
 )
 
 const (
@@ -28,9 +29,9 @@ const (
 )
 
 var (
-	ErrHeaderToLong = newError("Header too long.")
+	ErrHeaderToLong = errors.New("Header too long.")
 
-	ErrHeaderMisMatch = newError("Header Mismatch.")
+	ErrHeaderMisMatch = errors.New("Header Mismatch.")
 )
 
 type Reader interface {

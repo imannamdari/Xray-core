@@ -3,20 +3,20 @@ package scenarios
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 
-	"github.com/imannamdari/xray-core/app/metrics"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/app/router"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/dokodemo"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/app/metrics"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/app/router"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/proxy/freedom"
+	"github.com/xtls/xray-core/testing/servers/tcp"
 )
 
 const expectedMessage = "goroutine profile: total"
@@ -80,7 +80,7 @@ func TestMetrics(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Error("unexpected pprof status code")
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestMetrics(t *testing.T) {
 	if resp2.StatusCode != http.StatusOK {
 		t.Error("unexpected expvars status code")
 	}
-	body2, err2 := ioutil.ReadAll(resp2.Body)
+	body2, err2 := io.ReadAll(resp2.Body)
 	if err2 != nil {
 		t.Fatal(err2)
 	}

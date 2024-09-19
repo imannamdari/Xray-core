@@ -7,8 +7,8 @@ import (
 	"io"
 	"syscall"
 
-	"github.com/imannamdari/xray-core/common/platform"
-	"github.com/imannamdari/xray-core/features/stats"
+	"github.com/xtls/xray-core/common/platform"
+	"github.com/xtls/xray-core/features/stats"
 )
 
 type allocStrategy struct {
@@ -147,7 +147,7 @@ var useReadv bool
 
 func init() {
 	const defaultFlagValue = "NOT_DEFINED_AT_ALL"
-	value := platform.NewEnvFlag("xray.buf.readv").GetValue(func() string { return defaultFlagValue })
+	value := platform.NewEnvFlag(platform.UseReadV).GetValue(func() string { return defaultFlagValue })
 	switch value {
 	case defaultFlagValue, "auto", "enable":
 		useReadv = true

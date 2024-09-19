@@ -3,7 +3,7 @@ package pipe
 import (
 	"time"
 
-	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/buf"
 )
 
 // Reader is a buf.Reader that reads content from a pipe.
@@ -24,4 +24,18 @@ func (r *Reader) ReadMultiBufferTimeout(d time.Duration) (buf.MultiBuffer, error
 // Interrupt implements common.Interruptible.
 func (r *Reader) Interrupt() {
 	r.pipe.Interrupt()
+}
+
+// ReturnAnError makes ReadMultiBuffer return an error, only once.
+func (r *Reader) ReturnAnError(err error) {
+	r.pipe.errChan <- err
+}
+
+// Recover catches an error set by ReturnAnError, if exists.
+func (r *Reader) Recover() (err error) {
+	select {
+	case err = <-r.pipe.errChan:
+	default:
+	}
+	return
 }

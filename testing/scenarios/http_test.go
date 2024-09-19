@@ -7,20 +7,21 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	v2http "github.com/imannamdari/xray-core/proxy/http"
-	v2httptest "github.com/imannamdari/xray-core/testing/servers/http"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/freedom"
+	v2http "github.com/xtls/xray-core/proxy/http"
+	v2httptest "github.com/xtls/xray-core/testing/servers/http"
+	"github.com/xtls/xray-core/testing/servers/tcp"
 )
 
 func TestHttpConformance(t *testing.T) {
@@ -128,9 +129,8 @@ func TestHttpError(t *testing.T) {
 		}
 
 		resp, err := client.Get("http://127.0.0.1:" + dest.Port.String())
-		common.Must(err)
-		if resp.StatusCode != 503 {
-			t.Error("status: ", resp.StatusCode)
+		if resp != nil && resp.StatusCode != 503 || err != nil && !strings.Contains(err.Error(), "malformed HTTP status code") {
+			t.Error("should not receive http response", err)
 		}
 	}
 }

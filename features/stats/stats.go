@@ -1,12 +1,13 @@
 package stats
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
+//go:generate go run github.com/xtls/xray-core/common/errors/errorgen
 
 import (
 	"context"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/features"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/features"
 )
 
 // Counter is the interface for stats counters.
@@ -116,7 +117,7 @@ func (NoopManager) Type() interface{} {
 
 // RegisterCounter implements Manager.
 func (NoopManager) RegisterCounter(string) (Counter, error) {
-	return nil, newError("not implemented")
+	return nil, errors.New("not implemented")
 }
 
 // UnregisterCounter implements Manager.
@@ -131,7 +132,7 @@ func (NoopManager) GetCounter(string) Counter {
 
 // RegisterChannel implements Manager.
 func (NoopManager) RegisterChannel(string) (Channel, error) {
-	return nil, newError("not implemented")
+	return nil, errors.New("not implemented")
 }
 
 // UnregisterChannel implements Manager.

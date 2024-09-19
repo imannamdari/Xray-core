@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/imannamdari/xray-core/common"
-	. "github.com/imannamdari/xray-core/common/strmatcher"
+	"github.com/xtls/xray-core/common"
+	. "github.com/xtls/xray-core/common/strmatcher"
 )
 
 func TestMatcherGroup(t *testing.T) {
@@ -217,6 +217,10 @@ func TestACAutomaton(t *testing.T) {
 				pattern: "vvgoogle.com",
 				res:     true,
 			},
+			{
+				pattern: "½",
+				res:     false,
+			},
 		}
 		for _, test := range cases2Output {
 			if m := ac.Match(test.pattern); m != test.res {
@@ -224,7 +228,6 @@ func TestACAutomaton(t *testing.T) {
 			}
 		}
 	}
-
 	{
 		cases3Input := []struct {
 			pattern string

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/serial"
 )
 
 type logKey int
@@ -31,6 +31,8 @@ type AccessMessage struct {
 
 func (m *AccessMessage) String() string {
 	builder := strings.Builder{}
+	builder.WriteString("from")
+	builder.WriteByte(' ')
 	builder.WriteString(serial.ToString(m.From))
 	builder.WriteByte(' ')
 	builder.WriteString(string(m.Status))

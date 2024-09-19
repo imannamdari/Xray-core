@@ -3,9 +3,9 @@ package conf_test
 import (
 	"testing"
 
-	"github.com/imannamdari/xray-core/common/net"
-	. "github.com/imannamdari/xray-core/infra/conf"
-	"github.com/imannamdari/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/common/net"
+	. "github.com/xtls/xray-core/infra/conf"
+	"github.com/xtls/xray-core/proxy/dokodemo"
 )
 
 func TestDokodemoConfig(t *testing.T) {
@@ -19,7 +19,6 @@ func TestDokodemoConfig(t *testing.T) {
 				"address": "8.8.8.8",
 				"port": 53,
 				"network": "tcp",
-				"timeout": 10,
 				"followRedirect": true,
 				"userLevel": 1
 			}`,
@@ -32,7 +31,6 @@ func TestDokodemoConfig(t *testing.T) {
 				},
 				Port:           53,
 				Networks:       []net.Network{net.Network_TCP},
-				Timeout:        10,
 				FollowRedirect: true,
 				UserLevel:      1,
 			},

@@ -8,7 +8,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/imannamdari/xray-core/common/platform/filesystem"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/platform/filesystem"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -28,6 +29,9 @@ func GetOCSPStapling(cert [][]byte, path string) ([]byte, error) {
 	ocspData, err := GetOCSPForFile(path)
 	if err != nil {
 		ocspData, err = GetOCSPForCert(cert)
+		if err != nil {
+			return nil, err
+		}
 		if !CheckOCSPFileIsNotExist(path) {
 			err = os.Remove(path)
 			if err != nil {
@@ -60,26 +64,26 @@ func GetOCSPForCert(cert [][]byte) ([]byte, error) {
 	}
 	issuedCert := certificates[0]
 	if len(issuedCert.OCSPServer) == 0 {
-		return nil, newError("no OCSP server specified in cert")
+		return nil, errors.New("no OCSP server specified in cert")
 	}
 	if len(certificates) == 1 {
 		if len(issuedCert.IssuingCertificateURL) == 0 {
-			return nil, newError("no issuing certificate URL")
+			return nil, errors.New("no issuing certificate URL")
 		}
 		resp, errC := http.Get(issuedCert.IssuingCertificateURL[0])
 		if errC != nil {
-			return nil, newError("no issuing certificate URL")
+			return nil, errors.New("no issuing certificate URL")
 		}
 		defer resp.Body.Close()
 
 		issuerBytes, errC := io.ReadAll(resp.Body)
 		if errC != nil {
-			return nil, newError(errC)
+			return nil, errors.New(errC)
 		}
 
 		issuerCert, errC := x509.ParseCertificate(issuerBytes)
 		if errC != nil {
-			return nil, newError(errC)
+			return nil, errors.New(errC)
 		}
 
 		certificates = append(certificates, issuerCert)
@@ -93,12 +97,12 @@ func GetOCSPForCert(cert [][]byte) ([]byte, error) {
 	reader := bytes.NewReader(ocspReq)
 	req, err := http.Post(issuedCert.OCSPServer[0], "application/ocsp-request", reader)
 	if err != nil {
-		return nil, newError(err)
+		return nil, errors.New(err)
 	}
 	defer req.Body.Close()
 	ocspResBytes, err := io.ReadAll(req.Body)
 	if err != nil {
-		return nil, newError(err)
+		return nil, errors.New(err)
 	}
 	return ocspResBytes, nil
 }
@@ -125,7 +129,7 @@ func parsePEMBundle(bundle []byte) ([]*x509.Certificate, error) {
 	}
 
 	if len(certificates) == 0 {
-		return nil, newError("no certificates were found while parsing the bundle")
+		return nil, errors.New("no certificates were found while parsing the bundle")
 	}
 
 	return certificates, nil

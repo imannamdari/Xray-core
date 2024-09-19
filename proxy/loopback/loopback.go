@@ -3,17 +3,18 @@ package loopback
 import (
 	"context"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/net/cnc"
-	"github.com/imannamdari/xray-core/common/retry"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/transport"
-	"github.com/imannamdari/xray-core/transport/internet"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/net/cnc"
+	"github.com/xtls/xray-core/common/retry"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/internet"
 )
 
 type Loopback struct {
@@ -22,13 +23,15 @@ type Loopback struct {
 }
 
 func (l *Loopback) Process(ctx context.Context, link *transport.Link, _ internet.Dialer) error {
-	outbound := session.OutboundFromContext(ctx)
-	if outbound == nil || !outbound.Target.IsValid() {
-		return newError("target not specified.")
+	outbounds := session.OutboundsFromContext(ctx)
+	ob := outbounds[len(outbounds)-1]
+	if !ob.Target.IsValid() {
+		return errors.New("target not specified.")
 	}
-	destination := outbound.Target
+	ob.Name = "loopback"
+	destination := ob.Target
 
-	newError("opening connection to ", destination).WriteToLog(session.ExportIDToError(ctx))
+	errors.LogInfo(ctx, "opening connection to ", destination)
 
 	input := link.Reader
 	output := link.Writer
@@ -64,7 +67,7 @@ func (l *Loopback) Process(ctx context.Context, link *transport.Link, _ internet
 		return nil
 	})
 	if err != nil {
-		return newError("failed to open connection to ", destination).Base(err)
+		return errors.New("failed to open connection to ", destination).Base(err)
 	}
 	defer conn.Close()
 
@@ -77,7 +80,7 @@ func (l *Loopback) Process(ctx context.Context, link *transport.Link, _ internet
 		}
 
 		if err := buf.Copy(input, writer); err != nil {
-			return newError("failed to process request").Base(err)
+			return errors.New("failed to process request").Base(err)
 		}
 
 		return nil
@@ -91,14 +94,14 @@ func (l *Loopback) Process(ctx context.Context, link *transport.Link, _ internet
 			reader = buf.NewPacketReader(conn)
 		}
 		if err := buf.Copy(reader, output); err != nil {
-			return newError("failed to process response").Base(err)
+			return errors.New("failed to process response").Base(err)
 		}
 
 		return nil
 	}
 
 	if err := task.Run(ctx, requestDone, task.OnSuccess(responseDone, task.Close(output))); err != nil {
-		return newError("connection ends").Base(err)
+		return errors.New("connection ends").Base(err)
 	}
 
 	return nil

@@ -1,6 +1,6 @@
 package inbound
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
+//go:generate go run github.com/xtls/xray-core/common/errors/errorgen
 
 import (
 	"bytes"
@@ -10,32 +10,30 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"unsafe"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/retry"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/dns"
-	feature_inbound "github.com/imannamdari/xray-core/features/inbound"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/features/stats"
-	"github.com/imannamdari/xray-core/proxy/vless"
-	"github.com/imannamdari/xray-core/proxy/vless/encoding"
-	"github.com/imannamdari/xray-core/transport/internet/reality"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
-	"github.com/pires/go-proxyproto"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/retry"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/dns"
+	feature_inbound "github.com/xtls/xray-core/features/inbound"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/proxy"
+	"github.com/xtls/xray-core/proxy/vless"
+	"github.com/xtls/xray-core/proxy/vless/encoding"
+	"github.com/xtls/xray-core/transport/internet/reality"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
 )
 
 func init() {
@@ -47,7 +45,21 @@ func init() {
 		}); err != nil {
 			return nil, err
 		}
-		return New(ctx, config.(*Config), dc)
+
+		c := config.(*Config)
+
+		validator := new(vless.MemoryValidator)
+		for _, user := range c.Clients {
+			u, err := user.ToMemoryUser()
+			if err != nil {
+				return nil, errors.New("failed to get VLESS user").Base(err).AtError()
+			}
+			if err := validator.Add(u); err != nil {
+				return nil, errors.New("failed to initiate user").Base(err).AtError()
+			}
+		}
+
+		return New(ctx, c, dc, validator)
 	}))
 }
 
@@ -55,30 +67,20 @@ func init() {
 type Handler struct {
 	inboundHandlerManager feature_inbound.Manager
 	policyManager         policy.Manager
-	validator             *vless.Validator
+	validator             vless.Validator
 	dns                   dns.Client
 	fallbacks             map[string]map[string]map[string]*Fallback // or nil
 	// regexps               map[string]*regexp.Regexp       // or nil
 }
 
 // New creates a new VLess inbound handler.
-func New(ctx context.Context, config *Config, dc dns.Client) (*Handler, error) {
+func New(ctx context.Context, config *Config, dc dns.Client, validator vless.Validator) (*Handler, error) {
 	v := core.MustFromContext(ctx)
 	handler := &Handler{
 		inboundHandlerManager: v.GetFeature(feature_inbound.ManagerType()).(feature_inbound.Manager),
 		policyManager:         v.GetFeature(policy.ManagerType()).(policy.Manager),
-		validator:             new(vless.Validator),
 		dns:                   dc,
-	}
-
-	for _, user := range config.Clients {
-		u, err := user.ToMemoryUser()
-		if err != nil {
-			return nil, newError("failed to get VLESS user").Base(err).AtError()
-		}
-		if err := handler.AddUser(ctx, u); err != nil {
-			return nil, newError("failed to initiate user").Base(err).AtError()
-		}
+		validator:             validator,
 	}
 
 	if config.Fallbacks != nil {
@@ -95,7 +97,7 @@ func New(ctx context.Context, config *Config, dc dns.Client) (*Handler, error) {
 			/*
 				if fb.Path != "" {
 					if r, err := regexp.Compile(fb.Path); err != nil {
-						return nil, newError("invalid path regexp").Base(err).AtError()
+						return nil, errors.New("invalid path regexp").Base(err).AtError()
 					} else {
 						handler.regexps[fb.Path] = r
 					}
@@ -179,23 +181,20 @@ func (*Handler) Network() []net.Network {
 
 // Process implements proxy.Inbound.Process().
 func (h *Handler) Process(ctx context.Context, network net.Network, connection stat.Connection, dispatcher routing.Dispatcher) error {
-	sid := session.ExportIDToError(ctx)
-
 	iConn := connection
-	statConn, ok := iConn.(*stat.CounterConnection)
-	if ok {
+	if statConn, ok := iConn.(*stat.CounterConnection); ok {
 		iConn = statConn.Connection
 	}
 
 	sessionPolicy := h.policyManager.ForLevel(0)
 	if err := connection.SetReadDeadline(time.Now().Add(sessionPolicy.Timeouts.Handshake)); err != nil {
-		return newError("unable to set read deadline").Base(err).AtWarning()
+		return errors.New("unable to set read deadline").Base(err).AtWarning()
 	}
 
 	first := buf.FromBytes(make([]byte, buf.Size))
 	first.Clear()
 	firstLen, _ := first.ReadFrom(connection)
-	newError("firstLen = ", firstLen).AtInfo().WriteToLog(sid)
+	errors.LogInfo(ctx, "firstLen = ", firstLen)
 
 	reader := &buf.BufferedReader{
 		Reader: buf.NewReader(connection),
@@ -210,7 +209,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 	isfb := napfb != nil
 
 	if isfb && firstLen < 18 {
-		err = newError("fallback directly")
+		err = errors.New("fallback directly")
 	} else {
 		request, requestAddons, isfb, err = encoding.DecodeRequestHeader(isfb, first, reader, h.validator)
 	}
@@ -218,9 +217,9 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 	if err != nil {
 		if isfb {
 			if err := connection.SetReadDeadline(time.Time{}); err != nil {
-				newError("unable to set back read deadline").Base(err).AtWarning().WriteToLog(sid)
+				errors.LogWarningInner(ctx, err, "unable to set back read deadline")
 			}
-			newError("fallback starts").Base(err).AtInfo().WriteToLog(sid)
+			errors.LogInfoInner(ctx, err, "fallback starts")
 
 			name := ""
 			alpn := ""
@@ -228,14 +227,14 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 				cs := tlsConn.ConnectionState()
 				name = cs.ServerName
 				alpn = cs.NegotiatedProtocol
-				newError("realName = " + name).AtInfo().WriteToLog(sid)
-				newError("realAlpn = " + alpn).AtInfo().WriteToLog(sid)
+				errors.LogInfo(ctx, "realName = "+name)
+				errors.LogInfo(ctx, "realAlpn = "+alpn)
 			} else if realityConn, ok := iConn.(*reality.Conn); ok {
 				cs := realityConn.ConnectionState()
 				name = cs.ServerName
 				alpn = cs.NegotiatedProtocol
-				newError("realName = " + name).AtInfo().WriteToLog(sid)
-				newError("realAlpn = " + alpn).AtInfo().WriteToLog(sid)
+				errors.LogInfo(ctx, "realName = "+name)
+				errors.LogInfo(ctx, "realAlpn = "+alpn)
 			}
 			name = strings.ToLower(name)
 			alpn = strings.ToLower(alpn)
@@ -257,7 +256,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 			}
 			apfb := napfb[name]
 			if apfb == nil {
-				return newError(`failed to find the default "name" config`).AtWarning()
+				return errors.New(`failed to find the default "name" config`).AtWarning()
 			}
 
 			if apfb[alpn] == nil {
@@ -265,7 +264,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 			}
 			pfb := apfb[alpn]
 			if pfb == nil {
-				return newError(`failed to find the default "alpn" config`).AtWarning()
+				return errors.New(`failed to find the default "alpn" config`).AtWarning()
 			}
 
 			path := ""
@@ -274,7 +273,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 					if lines := bytes.Split(firstBytes, []byte{'\r', '\n'}); len(lines) > 1 {
 						if s := bytes.Split(lines[0], []byte{' '}); len(s) == 3 {
 							if len(s[0]) < 8 && len(s[1]) > 0 && len(s[2]) == 8 {
-								newError("realPath = " + string(s[1])).AtInfo().WriteToLog(sid)
+								errors.New("realPath = " + string(s[1])).AtInfo().WriteToLog(sid)
 								for _, fb := range pfb {
 									if fb.Path != "" && h.regexps[fb.Path].Match(s[1]) {
 										path = fb.Path
@@ -300,7 +299,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 								}
 								if k == '?' || k == ' ' {
 									path = string(firstBytes[i:j])
-									newError("realPath = " + path).AtInfo().WriteToLog(sid)
+									errors.LogInfo(ctx, "realPath = "+path)
 									if pfb[path] == nil {
 										path = ""
 									}
@@ -314,7 +313,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 			}
 			fb := pfb[path]
 			if fb == nil {
-				return newError(`failed to find the default "path" config`).AtWarning()
+				return errors.New(`failed to find the default "path" config`).AtWarning()
 			}
 
 			ctx, cancel := context.WithCancel(ctx)
@@ -330,7 +329,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 				}
 				return nil
 			}); err != nil {
-				return newError("failed to dial to " + fb.Dest).Base(err).AtWarning()
+				return errors.New("failed to dial to " + fb.Dest).Base(err).AtWarning()
 			}
 			defer conn.Close()
 
@@ -390,11 +389,11 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 						pro.Write([]byte{byte(p1 >> 8), byte(p1), byte(p2 >> 8), byte(p2)})
 					}
 					if err := serverWriter.WriteMultiBuffer(buf.MultiBuffer{pro}); err != nil {
-						return newError("failed to set PROXY protocol v", fb.Xver).Base(err).AtWarning()
+						return errors.New("failed to set PROXY protocol v", fb.Xver).Base(err).AtWarning()
 					}
 				}
 				if err := buf.Copy(reader, serverWriter, buf.UpdateActivity(timer)); err != nil {
-					return newError("failed to fallback request payload").Base(err).AtInfo()
+					return errors.New("failed to fallback request payload").Base(err).AtInfo()
 				}
 				return nil
 			}
@@ -404,7 +403,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 			getResponse := func() error {
 				defer timer.SetTimeout(sessionPolicy.Timeouts.UplinkOnly)
 				if err := buf.Copy(serverReader, writer, buf.UpdateActivity(timer)); err != nil {
-					return newError("failed to deliver response payload").Base(err).AtInfo()
+					return errors.New("failed to deliver response payload").Base(err).AtInfo()
 				}
 				return nil
 			}
@@ -412,7 +411,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 			if err := task.Run(ctx, task.OnSuccess(postRequest, task.Close(serverWriter)), task.OnSuccess(getResponse, task.Close(writer))); err != nil {
 				common.Interrupt(serverReader)
 				common.Interrupt(serverWriter)
-				return newError("fallback ends").Base(err).AtInfo()
+				return errors.New("fallback ends").Base(err).AtInfo()
 			}
 			return nil
 		}
@@ -424,20 +423,21 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 				Status: log.AccessRejected,
 				Reason: err,
 			})
-			err = newError("invalid request from ", connection.RemoteAddr()).Base(err).AtInfo()
+			err = errors.New("invalid request from ", connection.RemoteAddr()).Base(err).AtInfo()
 		}
 		return err
 	}
 
 	if err := connection.SetReadDeadline(time.Time{}); err != nil {
-		newError("unable to set back read deadline").Base(err).AtWarning().WriteToLog(sid)
+		errors.LogWarningInner(ctx, err, "unable to set back read deadline")
 	}
-	newError("received request for ", request.Destination()).AtInfo().WriteToLog(sid)
+	errors.LogInfo(ctx, "received request for ", request.Destination())
 
 	inbound := session.InboundFromContext(ctx)
 	if inbound == nil {
 		panic("no inbound metadata")
 	}
+	inbound.Name = "vless"
 	inbound.User = request.User
 
 	account := request.User.Account.(*vless.MemoryAccount)
@@ -446,44 +446,31 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 		// Flow: requestAddons.Flow,
 	}
 
-	var netConn net.Conn
-	var rawConn syscall.RawConn
 	var input *bytes.Reader
 	var rawInput *bytes.Buffer
-
 	switch requestAddons.Flow {
 	case vless.XRV:
 		if account.Flow == requestAddons.Flow {
+			inbound.CanSpliceCopy = 2
 			switch request.Command {
-			case protocol.RequestCommandMux:
-				return newError(requestAddons.Flow + " doesn't support Mux").AtWarning()
 			case protocol.RequestCommandUDP:
-				return newError(requestAddons.Flow + " doesn't support UDP").AtWarning()
+				return errors.New(requestAddons.Flow + " doesn't support UDP").AtWarning()
+			case protocol.RequestCommandMux:
+				fallthrough // we will break Mux connections that contain TCP requests
 			case protocol.RequestCommandTCP:
 				var t reflect.Type
 				var p uintptr
 				if tlsConn, ok := iConn.(*tls.Conn); ok {
 					if tlsConn.ConnectionState().Version != gotls.VersionTLS13 {
-						return newError(`failed to use `+requestAddons.Flow+`, found outer tls version `, tlsConn.ConnectionState().Version).AtWarning()
+						return errors.New(`failed to use `+requestAddons.Flow+`, found outer tls version `, tlsConn.ConnectionState().Version).AtWarning()
 					}
-					netConn = tlsConn.NetConn()
 					t = reflect.TypeOf(tlsConn.Conn).Elem()
 					p = uintptr(unsafe.Pointer(tlsConn.Conn))
 				} else if realityConn, ok := iConn.(*reality.Conn); ok {
-					netConn = realityConn.NetConn()
 					t = reflect.TypeOf(realityConn.Conn).Elem()
 					p = uintptr(unsafe.Pointer(realityConn.Conn))
-				} else if _, ok := iConn.(*tls.UConn); ok {
-					return newError("XTLS only supports UTLS fingerprint for the outbound.").AtWarning()
 				} else {
-					return newError("XTLS only supports TCP, mKCP and DomainSocket for now.").AtWarning()
-				}
-				if pc, ok := netConn.(*proxyproto.Conn); ok {
-					netConn = pc.Raw()
-					// 8192 > 4096, there is no need to process pc's bufReader
-				}
-				if sc, ok := netConn.(syscall.Conn); ok {
-					rawConn, _ = sc.SyscallConn()
+					return errors.New("XTLS only supports TLS and REALITY directly for now.").AtWarning()
 				}
 				i, _ := t.FieldByName("input")
 				r, _ := t.FieldByName("rawInput")
@@ -491,14 +478,15 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 				rawInput = (*bytes.Buffer)(unsafe.Pointer(p + r.Offset))
 			}
 		} else {
-			return newError(account.ID.String() + " is not able to use " + requestAddons.Flow).AtWarning()
+			return errors.New(account.ID.String() + " is not able to use " + requestAddons.Flow).AtWarning()
 		}
 	case "":
+		inbound.CanSpliceCopy = 3
 		if account.Flow == vless.XRV && (request.Command == protocol.RequestCommandTCP || isMuxAndNotXUDP(request, first)) {
-			return newError(account.ID.String() + " is not able to use \"\". Note that the pure TLS proxy has certain TLS in TLS characters.").AtWarning()
+			return errors.New(account.ID.String() + " is not able to use \"\". Note that the pure TLS proxy has certain TLS in TLS characters.").AtWarning()
 		}
 	default:
-		return newError("unknown request flow " + requestAddons.Flow).AtWarning()
+		return errors.New("unknown request flow " + requestAddons.Flow).AtWarning()
 	}
 
 	if request.Command != protocol.RequestCommandMux {
@@ -509,27 +497,24 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 			Reason: "",
 			Email:  request.User.Email,
 		})
+	} else if account.Flow == vless.XRV {
+		ctx = session.ContextWithAllowedNetwork(ctx, net.Network_UDP)
 	}
 
 	sessionPolicy = h.policyManager.ForLevel(request.User.Level)
 	ctx, cancel := context.WithCancel(ctx)
 	timer := signal.CancelAfterInactivity(ctx, cancel, sessionPolicy.Timeouts.ConnectionIdle)
+	inbound.Timer = timer
 	ctx = policy.ContextWithBufferPolicy(ctx, sessionPolicy.Buffer)
 
 	link, err := dispatcher.Dispatch(ctx, request.Destination())
 	if err != nil {
-		return newError("failed to dispatch request to ", request.Destination()).Base(err).AtWarning()
+		return errors.New("failed to dispatch request to ", request.Destination()).Base(err).AtWarning()
 	}
 
 	serverReader := link.Reader // .(*pipe.Reader)
 	serverWriter := link.Writer // .(*pipe.Writer)
-	enableXtls := false
-	isTLS12orAbove := false
-	isTLS := false
-	var cipher uint16 = 0
-	var remainingServerHello int32 = -1
-	numberOfPacketToFilter := 8
-
+	trafficState := proxy.NewTrafficState(account.ID.Bytes())
 	postRequest := func() error {
 		defer timer.SetTimeout(sessionPolicy.Timeouts.DownlinkOnly)
 
@@ -538,22 +523,17 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 
 		var err error
 
-		if rawConn != nil {
-			var counter stats.Counter
-			if statConn != nil {
-				counter = statConn.ReadCounter
-			}
-			// TODO enable splice
-			ctx = session.ContextWithInbound(ctx, nil)
-			err = encoding.XtlsRead(clientReader, serverWriter, timer, netConn, rawConn, input, rawInput, counter, ctx, account.ID.Bytes(),
-				&numberOfPacketToFilter, &enableXtls, &isTLS12orAbove, &isTLS, &cipher, &remainingServerHello)
+		if requestAddons.Flow == vless.XRV {
+			ctx1 := session.ContextWithInbound(ctx, nil) // TODO enable splice
+			clientReader = proxy.NewVisionReader(clientReader, trafficState, ctx1)
+			err = encoding.XtlsRead(clientReader, serverWriter, timer, connection, input, rawInput, trafficState, nil, ctx1)
 		} else {
-			// from clientReader.ReadMultiBuffer to serverWriter.WriteMultiBufer
+			// from clientReader.ReadMultiBuffer to serverWriter.WriteMultiBuffer
 			err = buf.Copy(clientReader, serverWriter, buf.UpdateActivity(timer))
 		}
 
 		if err != nil {
-			return newError("failed to transfer request payload").Base(err).AtInfo()
+			return errors.New("failed to transfer request payload").Base(err).AtInfo()
 		}
 
 		return nil
@@ -564,45 +544,32 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 
 		bufferWriter := buf.NewBufferedWriter(buf.NewWriter(connection))
 		if err := encoding.EncodeResponseHeader(bufferWriter, request, responseAddons); err != nil {
-			return newError("failed to encode response header").Base(err).AtWarning()
+			return errors.New("failed to encode response header").Base(err).AtWarning()
 		}
 
 		// default: clientWriter := bufferWriter
-		clientWriter := encoding.EncodeBodyAddons(bufferWriter, request, responseAddons)
-		userUUID := account.ID.Bytes()
+		clientWriter := encoding.EncodeBodyAddons(bufferWriter, request, requestAddons, trafficState, ctx)
 		multiBuffer, err1 := serverReader.ReadMultiBuffer()
 		if err1 != nil {
 			return err1 // ...
 		}
-		if requestAddons.Flow == vless.XRV {
-			encoding.XtlsFilterTls(multiBuffer, &numberOfPacketToFilter, &enableXtls, &isTLS12orAbove, &isTLS, &cipher, &remainingServerHello, ctx)
-			multiBuffer = encoding.ReshapeMultiBuffer(ctx, multiBuffer)
-			for i, b := range multiBuffer {
-				multiBuffer[i] = encoding.XtlsPadding(b, encoding.CommandPaddingContinue, &userUUID, isTLS, ctx)
-			}
-		}
 		if err := clientWriter.WriteMultiBuffer(multiBuffer); err != nil {
 			return err // ...
 		}
-		// Flush; bufferWriter.WriteMultiBufer now is bufferWriter.writer.WriteMultiBuffer
+		// Flush; bufferWriter.WriteMultiBuffer now is bufferWriter.writer.WriteMultiBuffer
 		if err := bufferWriter.SetBuffered(false); err != nil {
-			return newError("failed to write A response payload").Base(err).AtWarning()
+			return errors.New("failed to write A response payload").Base(err).AtWarning()
 		}
 
 		var err error
-		if rawConn != nil && requestAddons.Flow == vless.XRV {
-			var counter stats.Counter
-			if statConn != nil {
-				counter = statConn.WriteCounter
-			}
-			err = encoding.XtlsWrite(serverReader, clientWriter, timer, netConn, counter, ctx, &numberOfPacketToFilter,
-				&enableXtls, &isTLS12orAbove, &isTLS, &cipher, &remainingServerHello)
+		if requestAddons.Flow == vless.XRV {
+			err = encoding.XtlsWrite(serverReader, clientWriter, timer, connection, trafficState, nil, ctx)
 		} else {
-			// from serverReader.ReadMultiBuffer to clientWriter.WriteMultiBufer
+			// from serverReader.ReadMultiBuffer to clientWriter.WriteMultiBuffer
 			err = buf.Copy(serverReader, clientWriter, buf.UpdateActivity(timer))
 		}
 		if err != nil {
-			return newError("failed to transfer response payload").Base(err).AtInfo()
+			return errors.New("failed to transfer response payload").Base(err).AtInfo()
 		}
 		// Indicates the end of response payload.
 		switch responseAddons.Flow {
@@ -615,7 +582,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 	if err := task.Run(ctx, task.OnSuccess(postRequest, task.Close(serverWriter)), getResponse); err != nil {
 		common.Interrupt(serverReader)
 		common.Interrupt(serverWriter)
-		return newError("connection ends").Base(err).AtInfo()
+		return errors.New("connection ends").Base(err).AtInfo()
 	}
 
 	return nil

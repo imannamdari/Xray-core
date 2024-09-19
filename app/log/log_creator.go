@@ -3,8 +3,9 @@ package log
 import (
 	"sync"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/log"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
 )
 
 type HandlerCreatorOptions struct {
@@ -19,7 +20,7 @@ var handlerCreatorMapLock = &sync.RWMutex{}
 
 func RegisterHandlerCreator(logType LogType, f HandlerCreator) error {
 	if f == nil {
-		return newError("nil HandlerCreator")
+		return errors.New("nil HandlerCreator")
 	}
 
 	handlerCreatorMapLock.Lock()
@@ -35,7 +36,7 @@ func createHandler(logType LogType, options HandlerCreatorOptions) (log.Handler,
 
 	creator, found := handlerCreatorMap[logType]
 	if !found {
-		return nil, newError("unable to create log handler for ", logType)
+		return nil, errors.New("unable to create log handler for ", logType)
 	}
 	return creator(logType, options)
 }

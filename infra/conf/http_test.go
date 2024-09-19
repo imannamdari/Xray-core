@@ -3,8 +3,8 @@ package conf_test
 import (
 	"testing"
 
-	. "github.com/imannamdari/xray-core/infra/conf"
-	"github.com/imannamdari/xray-core/proxy/http"
+	. "github.com/xtls/xray-core/infra/conf"
+	"github.com/xtls/xray-core/proxy/http"
 )
 
 func TestHTTPServerConfig(t *testing.T) {
@@ -15,7 +15,6 @@ func TestHTTPServerConfig(t *testing.T) {
 	runMultiTestCase(t, []TestCase{
 		{
 			Input: `{
-				"timeout": 10,
 				"accounts": [
 					{
 						"user": "my-username",
@@ -32,7 +31,6 @@ func TestHTTPServerConfig(t *testing.T) {
 				},
 				AllowTransparent: true,
 				UserLevel:        1,
-				Timeout:          10,
 			},
 		},
 	})

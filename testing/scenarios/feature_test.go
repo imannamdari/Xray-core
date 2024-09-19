@@ -8,30 +8,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/app/dispatcher"
-	"github.com/imannamdari/xray-core/app/log"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	_ "github.com/imannamdari/xray-core/app/proxyman/inbound"
-	_ "github.com/imannamdari/xray-core/app/proxyman/outbound"
-	"github.com/imannamdari/xray-core/app/router"
-	"github.com/imannamdari/xray-core/common"
-	clog "github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/common/uuid"
-	core "github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/blackhole"
-	"github.com/imannamdari/xray-core/proxy/dokodemo"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	v2http "github.com/imannamdari/xray-core/proxy/http"
-	"github.com/imannamdari/xray-core/proxy/socks"
-	"github.com/imannamdari/xray-core/proxy/vmess"
-	"github.com/imannamdari/xray-core/proxy/vmess/inbound"
-	"github.com/imannamdari/xray-core/proxy/vmess/outbound"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
-	"github.com/imannamdari/xray-core/testing/servers/udp"
-	"github.com/imannamdari/xray-core/transport/internet"
+	"github.com/xtls/xray-core/app/dispatcher"
+	"github.com/xtls/xray-core/app/log"
+	"github.com/xtls/xray-core/app/proxyman"
+	_ "github.com/xtls/xray-core/app/proxyman/inbound"
+	_ "github.com/xtls/xray-core/app/proxyman/outbound"
+	"github.com/xtls/xray-core/app/router"
+	"github.com/xtls/xray-core/common"
+	clog "github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/uuid"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/blackhole"
+	"github.com/xtls/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/proxy/freedom"
+	v2http "github.com/xtls/xray-core/proxy/http"
+	"github.com/xtls/xray-core/proxy/socks"
+	"github.com/xtls/xray-core/proxy/vmess"
+	"github.com/xtls/xray-core/proxy/vmess/inbound"
+	"github.com/xtls/xray-core/proxy/vmess/outbound"
+	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/testing/servers/udp"
+	"github.com/xtls/xray-core/transport/internet"
 	xproxy "golang.org/x/net/proxy"
 )
 
@@ -55,9 +55,7 @@ func TestPassiveConnection(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -165,9 +163,7 @@ func TestProxy(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -305,9 +301,7 @@ func TestProxyOverKCP(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -394,9 +388,7 @@ func TestBlackhole(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 			{
@@ -407,9 +399,7 @@ func TestBlackhole(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest2.Address),
 					Port:    uint32(dest2.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
@@ -430,7 +420,9 @@ func TestBlackhole(t *testing.T) {
 						TargetTag: &router.RoutingRule_Tag{
 							Tag: "blocked",
 						},
-						PortRange: net.SinglePortRange(dest2.Port),
+						PortList: &net.PortList{
+							Range: []*net.PortRange{net.SinglePortRange(dest2.Port)},
+						},
 					},
 				},
 			}),
@@ -522,9 +514,7 @@ func TestUDPConnection(t *testing.T) {
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(dest.Address),
 					Port:    uint32(dest.Port),
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_UDP},
-					},
+					Networks: []net.Network{net.Network_UDP},
 				}),
 			},
 		},
@@ -560,16 +550,15 @@ func TestDomainSniffing(t *testing.T) {
 				ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
 					PortList: &net.PortList{Range: []*net.PortRange{net.SinglePortRange(sniffingPort)}},
 					Listen:   net.NewIPOrDomain(net.LocalHostIP),
-					DomainOverride: []proxyman.KnownProtocols{
-						proxyman.KnownProtocols_TLS,
+					SniffingSettings: &proxyman.SniffingConfig{
+						Enabled:             true,
+						DestinationOverride: []string{"tls"},
 					},
 				}),
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
 					Address: net.NewIPOrDomain(net.LocalHostIP),
 					Port:    443,
-					NetworkList: &net.NetworkList{
-						Network: []net.Network{net.Network_TCP},
-					},
+					Networks: []net.Network{net.Network_TCP},
 				}),
 			},
 			{

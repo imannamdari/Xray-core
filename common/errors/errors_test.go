@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	. "github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
+	. "github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
 )
 
 func TestError(t *testing.T) {
@@ -36,20 +36,14 @@ func TestError(t *testing.T) {
 	}
 }
 
-type e struct{}
-
 func TestErrorMessage(t *testing.T) {
 	data := []struct {
 		err error
 		msg string
 	}{
 		{
-			err: New("a").Base(New("b")).WithPathObj(e{}),
-			msg: "common/errors_test: a > b",
-		},
-		{
-			err: New("a").Base(New("b").WithPathObj(e{})),
-			msg: "a > common/errors_test: b",
+			err: New("a").Base(New("b")),
+			msg: "common/errors_test: a > common/errors_test: b",
 		},
 	}
 

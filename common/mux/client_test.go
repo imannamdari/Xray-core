@@ -6,14 +6,14 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/mux"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/testing/mocks"
-	"github.com/imannamdari/xray-core/transport"
-	"github.com/imannamdari/xray-core/transport/pipe"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/mux"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/testing/mocks"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/pipe"
 )
 
 func TestIncrementalPickerFailure(t *testing.T) {
@@ -86,9 +86,9 @@ func TestClientWorkerClose(t *testing.T) {
 	}
 
 	tr1, tw1 := pipe.New(pipe.WithoutSizeLimit())
-	ctx1 := session.ContextWithOutbound(context.Background(), &session.Outbound{
+	ctx1 := session.ContextWithOutbounds(context.Background(), []*session.Outbound{{
 		Target: net.TCPDestination(net.DomainAddress("www.example.com"), 80),
-	})
+	}})
 	common.Must(manager.Dispatch(ctx1, &transport.Link{
 		Reader: tr1,
 		Writer: tw1,
@@ -103,9 +103,9 @@ func TestClientWorkerClose(t *testing.T) {
 	}
 
 	tr2, tw2 := pipe.New(pipe.WithoutSizeLimit())
-	ctx2 := session.ContextWithOutbound(context.Background(), &session.Outbound{
+	ctx2 := session.ContextWithOutbounds(context.Background(), []*session.Outbound{{
 		Target: net.TCPDestination(net.DomainAddress("www.example.com"), 80),
-	})
+	}})
 	common.Must(manager.Dispatch(ctx2, &transport.Link{
 		Reader: tr2,
 		Writer: tw2,

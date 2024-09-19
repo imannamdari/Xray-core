@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/imannamdari/xray-core/common/platform"
-	"github.com/imannamdari/xray-core/features"
+	"github.com/xtls/xray-core/common/platform"
+	"github.com/xtls/xray-core/features"
 )
 
 // Timeout contains limits for connection timeout.
@@ -83,12 +83,8 @@ func ManagerType() interface{} {
 var defaultBufferSize int32
 
 func init() {
-	const key = "xray.ray.buffer.size"
 	const defaultValue = -17
-	size := platform.EnvFlag{
-		Name:    key,
-		AltName: platform.NormalizeEnvName(key),
-	}.GetValueAsInt(defaultValue)
+	size := platform.NewEnvFlag(platform.BufferSize).GetValueAsInt(defaultValue)
 
 	switch size {
 	case 0:

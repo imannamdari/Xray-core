@@ -5,15 +5,14 @@ import (
 	"encoding/hex"
 	fmt "fmt"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/protocol"
 )
 
 // MemoryAccount is an account type converted from Account.
 type MemoryAccount struct {
 	Password string
 	Key      []byte
-	Flow     string
 }
 
 // AsAccount implements protocol.AsAccount.
@@ -23,7 +22,6 @@ func (a *Account) AsAccount() (protocol.Account, error) {
 	return &MemoryAccount{
 		Password: password,
 		Key:      key,
-		Flow:     a.Flow,
 	}, nil
 }
 

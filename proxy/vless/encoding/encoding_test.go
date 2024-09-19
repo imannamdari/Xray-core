@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/uuid"
-	"github.com/imannamdari/xray-core/proxy/vless"
-	. "github.com/imannamdari/xray-core/proxy/vless/encoding"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/uuid"
+	"github.com/xtls/xray-core/proxy/vless"
+	. "github.com/xtls/xray-core/proxy/vless/encoding"
 )
 
 func toAccount(a *vless.Account) protocol.Account {
@@ -42,7 +42,7 @@ func TestRequestSerialization(t *testing.T) {
 	buffer := buf.StackNew()
 	common.Must(EncodeRequestHeader(&buffer, expectedRequest, expectedAddons))
 
-	Validator := new(vless.Validator)
+	Validator := new(vless.MemoryValidator)
 	Validator.Add(user)
 
 	actualRequest, actualAddons, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)
@@ -83,7 +83,7 @@ func TestInvalidRequest(t *testing.T) {
 	buffer := buf.StackNew()
 	common.Must(EncodeRequestHeader(&buffer, expectedRequest, expectedAddons))
 
-	Validator := new(vless.Validator)
+	Validator := new(vless.MemoryValidator)
 	Validator.Add(user)
 
 	_, _, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)
@@ -114,7 +114,7 @@ func TestMuxRequest(t *testing.T) {
 	buffer := buf.StackNew()
 	common.Must(EncodeRequestHeader(&buffer, expectedRequest, expectedAddons))
 
-	Validator := new(vless.Validator)
+	Validator := new(vless.MemoryValidator)
 	Validator.Add(user)
 
 	actualRequest, actualAddons, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)

@@ -3,18 +3,17 @@ package outbound
 import (
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/proxy/vmess"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/proxy/vmess"
 )
 
 func (h *Handler) handleSwitchAccount(cmd *protocol.CommandSwitchAccount) {
 	rawAccount := &vmess.Account{
-		Id:      cmd.ID.String(),
-		AlterId: uint32(cmd.AlterIds),
+		Id: cmd.ID.String(),
 		SecuritySettings: &protocol.SecurityConfig{
-			Type: protocol.SecurityType_LEGACY,
+			Type: protocol.SecurityType_AUTO,
 		},
 	}
 

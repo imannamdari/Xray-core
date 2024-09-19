@@ -4,20 +4,20 @@ import (
 	"context"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/retry"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	core "github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/transport"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/retry"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/task"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/stat"
 )
 
 // Client is a inbound handler for trojan protocol
@@ -32,12 +32,12 @@ func NewClient(ctx context.Context, config *ClientConfig) (*Client, error) {
 	for _, rec := range config.Server {
 		s, err := protocol.NewServerSpecFromPB(rec)
 		if err != nil {
-			return nil, newError("failed to parse server spec").Base(err)
+			return nil, errors.New("failed to parse server spec").Base(err)
 		}
 		serverList.AddServer(s)
 	}
 	if serverList.Size() == 0 {
-		return nil, newError("0 server")
+		return nil, errors.New("0 server")
 	}
 
 	v := core.MustFromContext(ctx)
@@ -50,11 +50,14 @@ func NewClient(ctx context.Context, config *ClientConfig) (*Client, error) {
 
 // Process implements OutboundHandler.Process().
 func (c *Client) Process(ctx context.Context, link *transport.Link, dialer internet.Dialer) error {
-	outbound := session.OutboundFromContext(ctx)
-	if outbound == nil || !outbound.Target.IsValid() {
-		return newError("target not specified")
+	outbounds := session.OutboundsFromContext(ctx)
+	ob := outbounds[len(outbounds)-1]
+	if !ob.Target.IsValid() {
+		return errors.New("target not specified")
 	}
-	destination := outbound.Target
+	ob.Name = "trojan"
+	ob.CanSpliceCopy = 3
+	destination := ob.Target
 	network := destination.Network
 
 	var server *protocol.ServerSpec
@@ -71,40 +74,43 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 		return nil
 	})
 	if err != nil {
-		return newError("failed to find an available destination").AtWarning().Base(err)
+		return errors.New("failed to find an available destination").AtWarning().Base(err)
 	}
-	newError("tunneling request to ", destination, " via ", server.Destination().NetAddr()).WriteToLog(session.ExportIDToError(ctx))
+	errors.LogInfo(ctx, "tunneling request to ", destination, " via ", server.Destination().NetAddr())
 
 	defer conn.Close()
-
-	iConn := conn
-	statConn, ok := iConn.(*stat.CounterConnection)
-	if ok {
-		iConn = statConn.Connection
-	}
 
 	user := server.PickUser()
 	account, ok := user.Account.(*MemoryAccount)
 	if !ok {
-		return newError("user account is not valid")
+		return errors.New("user account is not valid")
 	}
 
-	connWriter := &ConnWriter{
-		Flow: account.Flow,
+	var newCtx context.Context
+	var newCancel context.CancelFunc
+	if session.TimeoutOnlyFromContext(ctx) {
+		newCtx, newCancel = context.WithCancel(context.Background())
 	}
 
 	sessionPolicy := c.policyManager.ForLevel(user.Level)
 	ctx, cancel := context.WithCancel(ctx)
-	timer := signal.CancelAfterInactivity(ctx, cancel, sessionPolicy.Timeouts.ConnectionIdle)
+	timer := signal.CancelAfterInactivity(ctx, func() {
+		cancel()
+		if newCancel != nil {
+			newCancel()
+		}
+	}, sessionPolicy.Timeouts.ConnectionIdle)
 
 	postRequest := func() error {
 		defer timer.SetTimeout(sessionPolicy.Timeouts.DownlinkOnly)
 
 		bufferWriter := buf.NewBufferedWriter(buf.NewWriter(conn))
 
-		connWriter.Writer = bufferWriter
-		connWriter.Target = destination
-		connWriter.Account = account
+		connWriter := &ConnWriter{
+			Writer:  bufferWriter,
+			Target:  destination,
+			Account: account,
+		}
 
 		var bodyWriter buf.Writer
 		if destination.Network == net.Network_UDP {
@@ -115,12 +121,12 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 
 		// write some request payload to buffer
 		if err = buf.CopyOnceTimeout(link.Reader, bodyWriter, time.Millisecond*100); err != nil && err != buf.ErrNotTimeoutReader && err != buf.ErrReadTimeout {
-			return newError("failed to write A request payload").Base(err).AtWarning()
+			return errors.New("failed to write A request payload").Base(err).AtWarning()
 		}
 
-		// Flush; bufferWriter.WriteMultiBufer now is bufferWriter.writer.WriteMultiBuffer
+		// Flush; bufferWriter.WriteMultiBuffer now is bufferWriter.writer.WriteMultiBuffer
 		if err = bufferWriter.SetBuffered(false); err != nil {
-			return newError("failed to flush payload").Base(err).AtWarning()
+			return errors.New("failed to flush payload").Base(err).AtWarning()
 		}
 
 		// Send header if not sent yet
@@ -129,7 +135,7 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 		}
 
 		if err = buf.Copy(link.Reader, bodyWriter, buf.UpdateActivity(timer)); err != nil {
-			return newError("failed to transfer request payload").Base(err).AtInfo()
+			return errors.New("failed to transfer request payload").Base(err).AtInfo()
 		}
 
 		return nil
@@ -149,9 +155,13 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 		return buf.Copy(reader, link.Writer, buf.UpdateActivity(timer))
 	}
 
+	if newCtx != nil {
+		ctx = newCtx
+	}
+
 	responseDoneAndCloseWriter := task.OnSuccess(getResponse, task.Close(link.Writer))
 	if err := task.Run(ctx, postRequest, responseDoneAndCloseWriter); err != nil {
-		return newError("connection ends").Base(err)
+		return errors.New("connection ends").Base(err)
 	}
 
 	return nil
