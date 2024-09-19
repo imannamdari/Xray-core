@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/imannamdari/xray-core/common/signal/done"
 	core "github.com/imannamdari/xray-core/core"
 	"github.com/imannamdari/xray-core/features/outbound"
@@ -21,12 +22,14 @@ type Commander struct {
 	services []Service
 	ohm      outbound.Manager
 	tag      string
+	listen   string
 }
 
 // NewCommander creates a new Commander based on the given config.
 func NewCommander(ctx context.Context, config *Config) (*Commander, error) {
 	c := &Commander{
-		tag: config.Tag,
+		tag:    config.Tag,
+		listen: config.Listen,
 	}
 
 	common.Must(core.RequireFeatures(ctx, func(om outbound.Manager) {
@@ -44,7 +47,7 @@ func NewCommander(ctx context.Context, config *Config) (*Commander, error) {
 		}
 		service, ok := rawService.(Service)
 		if !ok {
-			return nil, newError("not a Service.")
+			return nil, errors.New("not a Service.")
 		}
 		c.services = append(c.services, service)
 	}
@@ -66,19 +69,32 @@ func (c *Commander) Start() error {
 	}
 	c.Unlock()
 
+	var listen = func(listener net.Listener) {
+		if err := c.server.Serve(listener); err != nil {
+			errors.LogErrorInner(context.Background(), err, "failed to start grpc server")
+		}
+	}
+
+	if len(c.listen) > 0 {
+		if l, err := net.Listen("tcp", c.listen); err != nil {
+			errors.LogErrorInner(context.Background(), err, "API server failed to listen on ", c.listen)
+			return err
+		} else {
+			errors.LogInfo(context.Background(), "API server listening on ", l.Addr())
+			go listen(l)
+		}
+		return nil
+	}
+
 	listener := &OutboundListener{
 		buffer: make(chan net.Conn, 4),
 		done:   done.New(),
 	}
 
-	go func() {
-		if err := c.server.Serve(listener); err != nil {
-			newError("failed to start grpc server").Base(err).AtError().WriteToLog()
-		}
-	}()
+	go listen(listener)
 
 	if err := c.ohm.RemoveHandler(context.Background(), c.tag); err != nil {
-		newError("failed to remove existing handler").WriteToLog()
+		errors.LogInfoInner(context.Background(), err, "failed to remove existing handler")
 	}
 
 	return c.ohm.AddHandler(context.Background(), &Outbound{

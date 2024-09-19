@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/imannamdari/xray-core/common/mux"
 	"github.com/imannamdari/xray-core/common/net"
 	"github.com/imannamdari/xray-core/common/session"
@@ -12,6 +12,7 @@ import (
 	"github.com/imannamdari/xray-core/features/routing"
 	"github.com/imannamdari/xray-core/transport"
 	"github.com/imannamdari/xray-core/transport/pipe"
+	"google.golang.org/protobuf/proto"
 )
 
 // Bridge is a component in reverse proxy, that relays connections from Portal to local address.
@@ -26,10 +27,10 @@ type Bridge struct {
 // NewBridge creates a new Bridge instance.
 func NewBridge(config *BridgeConfig, dispatcher routing.Dispatcher) (*Bridge, error) {
 	if config.Tag == "" {
-		return nil, newError("bridge tag is empty")
+		return nil, errors.New("bridge tag is empty")
 	}
 	if config.Domain == "" {
-		return nil, newError("bridge domain is empty")
+		return nil, errors.New("bridge domain is empty")
 	}
 
 	b := &Bridge{
@@ -74,7 +75,7 @@ func (b *Bridge) monitor() error {
 	if numWorker == 0 || numConnections/numWorker > 16 {
 		worker, err := NewBridgeWorker(b.domain, b.tag, b.dispatcher)
 		if err != nil {
-			newError("failed to create bridge worker").Base(err).AtWarning().WriteToLog()
+			errors.LogWarningInner(context.Background(), err, "failed to create bridge worker")
 			return nil
 		}
 		b.workers = append(b.workers, worker)
@@ -157,7 +158,7 @@ func (w *BridgeWorker) handleInternalConn(link *transport.Link) {
 			for _, b := range mb {
 				var ctl Control
 				if err := proto.Unmarshal(b.Bytes(), &ctl); err != nil {
-					newError("failed to parse proto message").Base(err).WriteToLog()
+					errors.LogInfoInner(context.Background(), err, "failed to parse proto message")
 					break
 				}
 				if ctl.State != w.state {

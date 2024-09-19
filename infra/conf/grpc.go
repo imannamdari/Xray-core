@@ -1,17 +1,19 @@
 package conf
 
 import (
-	"github.com/golang/protobuf/proto"
 	"github.com/imannamdari/xray-core/transport/internet/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 type GRPCConfig struct {
-	ServiceName         string `json:"serviceName" `
+	Authority           string `json:"authority"`
+	ServiceName         string `json:"serviceName"`
 	MultiMode           bool   `json:"multiMode"`
 	IdleTimeout         int32  `json:"idle_timeout"`
 	HealthCheckTimeout  int32  `json:"health_check_timeout"`
 	PermitWithoutStream bool   `json:"permit_without_stream"`
 	InitialWindowsSize  int32  `json:"initial_windows_size"`
+	UserAgent           string `json:"user_agent"`
 }
 
 func (g *GRPCConfig) Build() (proto.Message, error) {
@@ -27,11 +29,13 @@ func (g *GRPCConfig) Build() (proto.Message, error) {
 	}
 
 	return &grpc.Config{
+		Authority:           g.Authority,
 		ServiceName:         g.ServiceName,
 		MultiMode:           g.MultiMode,
 		IdleTimeout:         g.IdleTimeout,
 		HealthCheckTimeout:  g.HealthCheckTimeout,
 		PermitWithoutStream: g.PermitWithoutStream,
 		InitialWindowsSize:  g.InitialWindowsSize,
+		UserAgent:           g.UserAgent,
 	}, nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/imannamdari/xray-core/common/signal"
+	"github.com/imannamdari/xray-core/features/stats"
 )
 
 type dataHandler func(MultiBuffer)
@@ -36,6 +37,17 @@ func CountSize(sc *SizeCounter) CopyOption {
 	return func(handler *copyHandler) {
 		handler.onData = append(handler.onData, func(b MultiBuffer) {
 			sc.Size += int64(b.Len())
+		})
+	}
+}
+
+// AddToStatCounter a CopyOption add to stat counter
+func AddToStatCounter(sc stats.Counter) CopyOption {
+	return func(handler *copyHandler) {
+		handler.onData = append(handler.onData, func(b MultiBuffer) {
+			if sc != nil {
+				sc.Add(int64(b.Len()))
+			}
 		})
 	}
 }
@@ -108,7 +120,7 @@ func Copy(reader Reader, writer Writer, options ...CopyOption) error {
 	return nil
 }
 
-var ErrNotTimeoutReader = newError("not a TimeoutReader")
+var ErrNotTimeoutReader = errors.New("not a TimeoutReader")
 
 func CopyOnceTimeout(reader Reader, writer Writer, timeout time.Duration) error {
 	timeoutReader, ok := reader.(TimeoutReader)

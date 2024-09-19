@@ -6,16 +6,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/imannamdari/xray-core/app/router"
+	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/imannamdari/xray-core/common/net"
 	"github.com/imannamdari/xray-core/common/platform/filesystem"
+	"github.com/imannamdari/xray-core/common/serial"
+	"google.golang.org/protobuf/proto"
 )
-
-type RouterRulesConfig struct {
-	RuleList       []json.RawMessage `json:"rules"`
-	DomainStrategy string            `json:"domainStrategy"`
-}
 
 // StrategyConfig represents a strategy config
 type StrategyConfig struct {
@@ -24,41 +21,59 @@ type StrategyConfig struct {
 }
 
 type BalancingRule struct {
-	Tag       string         `json:"tag"`
-	Selectors StringList     `json:"selector"`
-	Strategy  StrategyConfig `json:"strategy"`
+	Tag         string         `json:"tag"`
+	Selectors   StringList     `json:"selector"`
+	Strategy    StrategyConfig `json:"strategy"`
+	FallbackTag string         `json:"fallbackTag"`
 }
 
+// Build builds the balancing rule
 func (r *BalancingRule) Build() (*router.BalancingRule, error) {
 	if r.Tag == "" {
-		return nil, newError("empty balancer tag")
+		return nil, errors.New("empty balancer tag")
 	}
 	if len(r.Selectors) == 0 {
-		return nil, newError("empty selector list")
+		return nil, errors.New("empty selector list")
 	}
 
-	var strategy string
-	switch strings.ToLower(r.Strategy.Type) {
-	case strategyRandom, "":
-		strategy = strategyRandom
-	case strategyLeastPing:
-		strategy = "leastPing"
+	r.Strategy.Type = strings.ToLower(r.Strategy.Type)
+	switch r.Strategy.Type {
+	case "":
+		r.Strategy.Type = strategyRandom
+	case strategyRandom, strategyLeastLoad, strategyLeastPing, strategyRoundRobin:
 	default:
-		return nil, newError("unknown balancing strategy: " + r.Strategy.Type)
+		return nil, errors.New("unknown balancing strategy: " + r.Strategy.Type)
+	}
+
+	settings := []byte("{}")
+	if r.Strategy.Settings != nil {
+		settings = ([]byte)(*r.Strategy.Settings)
+	}
+	rawConfig, err := strategyConfigLoader.LoadWithID(settings, r.Strategy.Type)
+	if err != nil {
+		return nil, errors.New("failed to parse to strategy config.").Base(err)
+	}
+	var ts proto.Message
+	if builder, ok := rawConfig.(Buildable); ok {
+		ts, err = builder.Build()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &router.BalancingRule{
+		Strategy:         r.Strategy.Type,
+		StrategySettings: serial.ToTypedMessage(ts),
+		FallbackTag:      r.FallbackTag,
+		OutboundSelector: r.Selectors,
 		Tag:              r.Tag,
-		OutboundSelector: []string(r.Selectors),
-		Strategy:         strategy,
 	}, nil
 }
 
 type RouterConfig struct {
-	Settings       *RouterRulesConfig `json:"settings"` // Deprecated
-	RuleList       []json.RawMessage  `json:"rules"`
-	DomainStrategy *string            `json:"domainStrategy"`
-	Balancers      []*BalancingRule   `json:"balancers"`
+	RuleList       []json.RawMessage `json:"rules"`
+	DomainStrategy *string           `json:"domainStrategy"`
+	Balancers      []*BalancingRule  `json:"balancers"`
 
 	DomainMatcher string `json:"domainMatcher"`
 }
@@ -67,8 +82,6 @@ func (c *RouterConfig) getDomainStrategy() router.Config_DomainStrategy {
 	ds := ""
 	if c.DomainStrategy != nil {
 		ds = *c.DomainStrategy
-	} else if c.Settings != nil {
-		ds = c.Settings.DomainStrategy
 	}
 
 	switch strings.ToLower(ds) {
@@ -90,10 +103,6 @@ func (c *RouterConfig) Build() (*router.Config, error) {
 	var rawRuleList []json.RawMessage
 	if c != nil {
 		rawRuleList = c.RuleList
-		if c.Settings != nil {
-			c.RuleList = append(c.RuleList, c.Settings.RuleList...)
-			rawRuleList = c.RuleList
-		}
 	}
 
 	for _, rawRule := range rawRuleList {
@@ -119,6 +128,7 @@ func (c *RouterConfig) Build() (*router.Config, error) {
 }
 
 type RouterRule struct {
+	RuleTag     string `json:"ruleTag"`
 	Type        string `json:"type"`
 	OutboundTag string `json:"outboundTag"`
 	BalancerTag string `json:"balancerTag"`
@@ -142,12 +152,12 @@ func ParseIP(s string) (*router.CIDR, error) {
 		if len(mask) > 0 {
 			bits64, err := strconv.ParseUint(mask, 10, 32)
 			if err != nil {
-				return nil, newError("invalid network mask for router: ", mask).Base(err)
+				return nil, errors.New("invalid network mask for router: ", mask).Base(err)
 			}
 			bits = uint32(bits64)
 		}
 		if bits > 32 {
-			return nil, newError("invalid network mask for router: ", bits)
+			return nil, errors.New("invalid network mask for router: ", bits)
 		}
 		return &router.CIDR{
 			Ip:     []byte(ip.IP()),
@@ -158,19 +168,19 @@ func ParseIP(s string) (*router.CIDR, error) {
 		if len(mask) > 0 {
 			bits64, err := strconv.ParseUint(mask, 10, 32)
 			if err != nil {
-				return nil, newError("invalid network mask for router: ", mask).Base(err)
+				return nil, errors.New("invalid network mask for router: ", mask).Base(err)
 			}
 			bits = uint32(bits64)
 		}
 		if bits > 128 {
-			return nil, newError("invalid network mask for router: ", bits)
+			return nil, errors.New("invalid network mask for router: ", bits)
 		}
 		return &router.CIDR{
 			Ip:     []byte(ip.IP()),
 			Prefix: bits,
 		}, nil
 	default:
-		return nil, newError("unsupported address for router: ", s)
+		return nil, errors.New("unsupported address for router: ", s)
 	}
 }
 
@@ -188,10 +198,10 @@ func loadFile(file string) ([]byte, error) {
 	if FileCache[file] == nil {
 		bs, err := filesystem.ReadAsset(file)
 		if err != nil {
-			return nil, newError("failed to open file: ", file).Base(err)
+			return nil, errors.New("failed to open file: ", file).Base(err)
 		}
 		if len(bs) == 0 {
-			return nil, newError("empty file: ", file)
+			return nil, errors.New("empty file: ", file)
 		}
 		// Do not cache file, may save RAM when there
 		// are many files, but consume CPU each time.
@@ -206,15 +216,15 @@ func loadIP(file, code string) ([]*router.CIDR, error) {
 	if IPCache[index] == nil {
 		bs, err := loadFile(file)
 		if err != nil {
-			return nil, newError("failed to load file: ", file).Base(err)
+			return nil, errors.New("failed to load file: ", file).Base(err)
 		}
 		bs = find(bs, []byte(code))
 		if bs == nil {
-			return nil, newError("code not found in ", file, ": ", code)
+			return nil, errors.New("code not found in ", file, ": ", code)
 		}
 		var geoip router.GeoIP
 		if err := proto.Unmarshal(bs, &geoip); err != nil {
-			return nil, newError("error unmarshal IP in ", file, ": ", code).Base(err)
+			return nil, errors.New("error unmarshal IP in ", file, ": ", code).Base(err)
 		}
 		defer runtime.GC()     // or debug.FreeOSMemory()
 		return geoip.Cidr, nil // do not cache geoip
@@ -228,21 +238,38 @@ func loadSite(file, code string) ([]*router.Domain, error) {
 	if SiteCache[index] == nil {
 		bs, err := loadFile(file)
 		if err != nil {
-			return nil, newError("failed to load file: ", file).Base(err)
+			return nil, errors.New("failed to load file: ", file).Base(err)
 		}
 		bs = find(bs, []byte(code))
 		if bs == nil {
-			return nil, newError("list not found in ", file, ": ", code)
+			return nil, errors.New("list not found in ", file, ": ", code)
 		}
 		var geosite router.GeoSite
 		if err := proto.Unmarshal(bs, &geosite); err != nil {
-			return nil, newError("error unmarshal Site in ", file, ": ", code).Base(err)
+			return nil, errors.New("error unmarshal Site in ", file, ": ", code).Base(err)
 		}
 		defer runtime.GC()         // or debug.FreeOSMemory()
 		return geosite.Domain, nil // do not cache geosite
 		SiteCache[index] = &geosite
 	}
 	return SiteCache[index].Domain, nil
+}
+
+func DecodeVarint(buf []byte) (x uint64, n int) {
+	for shift := uint(0); shift < 64; shift += 7 {
+		if n >= len(buf) {
+			return 0, 0
+		}
+		b := uint64(buf[n])
+		n++
+		x |= (b & 0x7F) << shift
+		if (b & 0x80) == 0 {
+			return x, n
+		}
+	}
+
+	// The number is too large to represent in a 64-bit value.
+	return 0, 0
 }
 
 func find(data, code []byte) []byte {
@@ -255,7 +282,7 @@ func find(data, code []byte) []byte {
 		if dataL < 2 {
 			return nil
 		}
-		x, y := proto.DecodeVarint(data[1:])
+		x, y := DecodeVarint(data[1:])
 		if x == 0 && y == 0 {
 			return nil
 		}
@@ -323,7 +350,7 @@ func parseAttrs(attrs []string) *AttributeList {
 func loadGeositeWithAttr(file string, siteWithAttr string) ([]*router.Domain, error) {
 	parts := strings.Split(siteWithAttr, "@")
 	if len(parts) == 0 {
-		return nil, newError("empty site")
+		return nil, errors.New("empty site")
 	}
 	country := strings.ToUpper(parts[0])
 	attrs := parseAttrs(parts[1:])
@@ -351,7 +378,7 @@ func parseDomainRule(domain string) ([]*router.Domain, error) {
 		country := strings.ToUpper(domain[8:])
 		domains, err := loadGeositeWithAttr("geosite.dat", country)
 		if err != nil {
-			return nil, newError("failed to load geosite: ", country).Base(err)
+			return nil, errors.New("failed to load geosite: ", country).Base(err)
 		}
 		return domains, nil
 	}
@@ -369,13 +396,13 @@ func parseDomainRule(domain string) ([]*router.Domain, error) {
 	if isExtDatFile != 0 {
 		kv := strings.Split(domain[isExtDatFile:], ":")
 		if len(kv) != 2 {
-			return nil, newError("invalid external resource: ", domain)
+			return nil, errors.New("invalid external resource: ", domain)
 		}
 		filename := kv[0]
 		country := kv[1]
 		domains, err := loadGeositeWithAttr(filename, country)
 		if err != nil {
-			return nil, newError("failed to load external sites: ", country, " from ", filename).Base(err)
+			return nil, errors.New("failed to load external sites: ", country, " from ", filename).Base(err)
 		}
 		return domains, nil
 	}
@@ -406,7 +433,7 @@ func parseDomainRule(domain string) ([]*router.Domain, error) {
 		case !strings.Contains(substr, "."):
 			domainRule.Value = "^[^.]*" + substr + "[^.]*$"
 		default:
-			return nil, newError("substr in dotless rule should not contain a dot: ", substr)
+			return nil, errors.New("substr in dotless rule should not contain a dot: ", substr)
 		}
 
 	default:
@@ -429,11 +456,11 @@ func ToCidrList(ips StringList) ([]*router.GeoIP, error) {
 				isReverseMatch = true
 			}
 			if len(country) == 0 {
-				return nil, newError("empty country name in rule")
+				return nil, errors.New("empty country name in rule")
 			}
 			geoip, err := loadGeoIP(strings.ToUpper(country))
 			if err != nil {
-				return nil, newError("failed to load GeoIP: ", country).Base(err)
+				return nil, errors.New("failed to load GeoIP: ", country).Base(err)
 			}
 
 			geoipList = append(geoipList, &router.GeoIP{
@@ -457,13 +484,13 @@ func ToCidrList(ips StringList) ([]*router.GeoIP, error) {
 		if isExtDatFile != 0 {
 			kv := strings.Split(ip[isExtDatFile:], ":")
 			if len(kv) != 2 {
-				return nil, newError("invalid external resource: ", ip)
+				return nil, errors.New("invalid external resource: ", ip)
 			}
 
 			filename := kv[0]
 			country := kv[1]
 			if len(filename) == 0 || len(country) == 0 {
-				return nil, newError("empty filename or empty country in rule")
+				return nil, errors.New("empty filename or empty country in rule")
 			}
 
 			isReverseMatch := false
@@ -473,7 +500,7 @@ func ToCidrList(ips StringList) ([]*router.GeoIP, error) {
 			}
 			geoip, err := loadIP(filename, strings.ToUpper(country))
 			if err != nil {
-				return nil, newError("failed to load IPs: ", country, " from ", filename).Base(err)
+				return nil, errors.New("failed to load IPs: ", country, " from ", filename).Base(err)
 			}
 
 			geoipList = append(geoipList, &router.GeoIP{
@@ -487,7 +514,7 @@ func ToCidrList(ips StringList) ([]*router.GeoIP, error) {
 
 		ipRule, err := ParseIP(ip)
 		if err != nil {
-			return nil, newError("invalid IP: ", ip).Base(err)
+			return nil, errors.New("invalid IP: ", ip).Base(err)
 		}
 		customCidrs = append(customCidrs, ipRule)
 	}
@@ -504,17 +531,17 @@ func ToCidrList(ips StringList) ([]*router.GeoIP, error) {
 func parseFieldRule(msg json.RawMessage) (*router.RoutingRule, error) {
 	type RawFieldRule struct {
 		RouterRule
-		Domain     *StringList  `json:"domain"`
-		Domains    *StringList  `json:"domains"`
-		IP         *StringList  `json:"ip"`
-		Port       *PortList    `json:"port"`
-		Network    *NetworkList `json:"network"`
-		SourceIP   *StringList  `json:"source"`
-		SourcePort *PortList    `json:"sourcePort"`
-		User       *StringList  `json:"user"`
-		InboundTag *StringList  `json:"inboundTag"`
-		Protocols  *StringList  `json:"protocol"`
-		Attributes string       `json:"attrs"`
+		Domain     *StringList       `json:"domain"`
+		Domains    *StringList       `json:"domains"`
+		IP         *StringList       `json:"ip"`
+		Port       *PortList         `json:"port"`
+		Network    *NetworkList      `json:"network"`
+		SourceIP   *StringList       `json:"source"`
+		SourcePort *PortList         `json:"sourcePort"`
+		User       *StringList       `json:"user"`
+		InboundTag *StringList       `json:"inboundTag"`
+		Protocols  *StringList       `json:"protocol"`
+		Attributes map[string]string `json:"attrs"`
 	}
 	rawFieldRule := new(RawFieldRule)
 	err := json.Unmarshal(msg, rawFieldRule)
@@ -523,6 +550,7 @@ func parseFieldRule(msg json.RawMessage) (*router.RoutingRule, error) {
 	}
 
 	rule := new(router.RoutingRule)
+	rule.RuleTag = rawFieldRule.RuleTag
 	switch {
 	case len(rawFieldRule.OutboundTag) > 0:
 		rule.TargetTag = &router.RoutingRule_Tag{
@@ -533,7 +561,7 @@ func parseFieldRule(msg json.RawMessage) (*router.RoutingRule, error) {
 			BalancingTag: rawFieldRule.BalancerTag,
 		}
 	default:
-		return nil, newError("neither outboundTag nor balancerTag is specified in routing rule")
+		return nil, errors.New("neither outboundTag nor balancerTag is specified in routing rule")
 	}
 
 	if rawFieldRule.DomainMatcher != "" {
@@ -544,7 +572,7 @@ func parseFieldRule(msg json.RawMessage) (*router.RoutingRule, error) {
 		for _, domain := range *rawFieldRule.Domain {
 			rules, err := parseDomainRule(domain)
 			if err != nil {
-				return nil, newError("failed to parse domain rule: ", domain).Base(err)
+				return nil, errors.New("failed to parse domain rule: ", domain).Base(err)
 			}
 			rule.Domain = append(rule.Domain, rules...)
 		}
@@ -554,7 +582,7 @@ func parseFieldRule(msg json.RawMessage) (*router.RoutingRule, error) {
 		for _, domain := range *rawFieldRule.Domains {
 			rules, err := parseDomainRule(domain)
 			if err != nil {
-				return nil, newError("failed to parse domain rule: ", domain).Base(err)
+				return nil, errors.New("failed to parse domain rule: ", domain).Base(err)
 			}
 			rule.Domain = append(rule.Domain, rules...)
 		}
@@ -617,64 +645,14 @@ func ParseRule(msg json.RawMessage) (*router.RoutingRule, error) {
 	rawRule := new(RouterRule)
 	err := json.Unmarshal(msg, rawRule)
 	if err != nil {
-		return nil, newError("invalid router rule").Base(err)
+		return nil, errors.New("invalid router rule").Base(err)
 	}
-	if strings.EqualFold(rawRule.Type, "field") {
+	if rawRule.Type == "" || strings.EqualFold(rawRule.Type, "field") {
 		fieldrule, err := parseFieldRule(msg)
 		if err != nil {
-			return nil, newError("invalid field rule").Base(err)
+			return nil, errors.New("invalid field rule").Base(err)
 		}
 		return fieldrule, nil
 	}
-	if strings.EqualFold(rawRule.Type, "chinaip") {
-		chinaiprule, err := parseChinaIPRule(msg)
-		if err != nil {
-			return nil, newError("invalid chinaip rule").Base(err)
-		}
-		return chinaiprule, nil
-	}
-	if strings.EqualFold(rawRule.Type, "chinasites") {
-		chinasitesrule, err := parseChinaSitesRule(msg)
-		if err != nil {
-			return nil, newError("invalid chinasites rule").Base(err)
-		}
-		return chinasitesrule, nil
-	}
-	return nil, newError("unknown router rule type: ", rawRule.Type)
-}
-
-func parseChinaIPRule(data []byte) (*router.RoutingRule, error) {
-	rawRule := new(RouterRule)
-	err := json.Unmarshal(data, rawRule)
-	if err != nil {
-		return nil, newError("invalid router rule").Base(err)
-	}
-	chinaIPs, err := loadGeoIP("CN")
-	if err != nil {
-		return nil, newError("failed to load geoip:cn").Base(err)
-	}
-	return &router.RoutingRule{
-		TargetTag: &router.RoutingRule_Tag{
-			Tag: rawRule.OutboundTag,
-		},
-		Cidr: chinaIPs,
-	}, nil
-}
-
-func parseChinaSitesRule(data []byte) (*router.RoutingRule, error) {
-	rawRule := new(RouterRule)
-	err := json.Unmarshal(data, rawRule)
-	if err != nil {
-		return nil, newError("invalid router rule").Base(err).AtError()
-	}
-	domains, err := loadGeositeWithAttr("geosite.dat", "CN")
-	if err != nil {
-		return nil, newError("failed to load geosite:cn.").Base(err)
-	}
-	return &router.RoutingRule{
-		TargetTag: &router.RoutingRule_Tag{
-			Tag: rawRule.OutboundTag,
-		},
-		Domain: domains,
-	}, nil
+	return nil, errors.New("unknown router rule type: ", rawRule.Type)
 }

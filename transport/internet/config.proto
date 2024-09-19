@@ -14,7 +14,8 @@ enum TransportProtocol {
   MKCP = 2;
   WebSocket = 3;
   HTTP = 4;
-  DomainSocket = 5;
+  HTTPUpgrade = 6;
+  SplitHTTP = 7;
 }
 
 enum DomainStrategy {
@@ -22,6 +23,13 @@ enum DomainStrategy {
   USE_IP = 1;
   USE_IP4 = 2;
   USE_IP6 = 3;
+  USE_IP46 = 4;
+  USE_IP64 = 5;
+  FORCE_IP = 6;
+  FORCE_IP4 = 7;
+  FORCE_IP6 = 8;
+  FORCE_IP46 = 9;
+  FORCE_IP64 = 10;
 }
 
 message TransportConfig {
@@ -57,6 +65,13 @@ message StreamConfig {
 message ProxyConfig {
   string tag = 1;
   bool transportLayerProxy = 2;
+}
+
+message CustomSockopt {
+  string level = 1;
+  string opt = 2;
+  string value = 3;
+  string type = 4;
 }
 
 // SocketConfig is options to be applied on network sockets.
@@ -102,4 +117,16 @@ message SocketConfig {
   string interface = 13;
 
   bool   v6only = 14;
+
+  int32 tcp_window_clamp = 15;
+
+  int32 tcp_user_timeout = 16;
+
+  int32 tcp_max_seg = 17;
+
+  bool tcp_no_delay = 18;
+
+  bool tcp_mptcp = 19;
+
+  repeated CustomSockopt customSockopt = 20;
 }

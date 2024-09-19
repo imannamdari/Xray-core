@@ -11,6 +11,8 @@ import (
 
 	"github.com/imannamdari/xray-core/common"
 	"github.com/imannamdari/xray-core/common/buf"
+	c "github.com/imannamdari/xray-core/common/ctx"
+	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/imannamdari/xray-core/common/net"
 	"github.com/imannamdari/xray-core/common/net/cnc"
 	"github.com/imannamdari/xray-core/common/session"
@@ -44,7 +46,7 @@ func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *in
 	tlsConfigs := tls.ConfigFromStreamSettings(streamSettings)
 	realityConfigs := reality.ConfigFromStreamSettings(streamSettings)
 	if tlsConfigs == nil && realityConfigs == nil {
-		return nil, newError("TLS or REALITY must be enabled for http transport.").AtWarning()
+		return nil, errors.New("TLS or REALITY must be enabled for http transport.").AtWarning()
 	}
 	sockopt := streamSettings.SocketSettings
 
@@ -53,7 +55,7 @@ func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *in
 	}
 
 	transport := &http2.Transport{
-		DialTLS: func(network string, addr string, tlsConfig *gotls.Config) (net.Conn, error) {
+		DialTLSContext: func(hctx context.Context, string, addr string, tlsConfig *gotls.Config) (net.Conn, error) {
 			rawHost, rawPort, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
@@ -67,18 +69,18 @@ func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *in
 			}
 			address := net.ParseAddress(rawHost)
 
-			dctx := context.Background()
-			dctx = session.ContextWithID(dctx, session.IDFromContext(ctx))
-			dctx = session.ContextWithOutbound(dctx, session.OutboundFromContext(ctx))
+			hctx = c.ContextWithID(hctx, c.IDFromContext(ctx))
+			hctx = session.ContextWithOutbounds(hctx, session.OutboundsFromContext(ctx))
+			hctx = session.ContextWithTimeoutOnly(hctx, true)
 
-			pconn, err := internet.DialSystem(dctx, net.TCPDestination(address, port), sockopt)
+			pconn, err := internet.DialSystem(hctx, net.TCPDestination(address, port), sockopt)
 			if err != nil {
-				newError("failed to dial to " + addr).Base(err).AtError().WriteToLog()
+				errors.LogErrorInner(ctx, err, "failed to dial to "+addr)
 				return nil, err
 			}
 
 			if realityConfigs != nil {
-				return reality.UClient(pconn, realityConfigs, ctx, dest)
+				return reality.UClient(pconn, realityConfigs, hctx, dest)
 			}
 
 			var cn tls.Interface
@@ -87,22 +89,19 @@ func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *in
 			} else {
 				cn = tls.Client(pconn, tlsConfig).(*tls.Conn)
 			}
-			if err := cn.Handshake(); err != nil {
-				newError("failed to dial to " + addr).Base(err).AtError().WriteToLog()
+			if err := cn.HandshakeContext(ctx); err != nil {
+				errors.LogErrorInner(ctx, err, "failed to dial to "+addr)
 				return nil, err
 			}
 			if !tlsConfig.InsecureSkipVerify {
 				if err := cn.VerifyHostname(tlsConfig.ServerName); err != nil {
-					newError("failed to dial to " + addr).Base(err).AtError().WriteToLog()
+					errors.LogErrorInner(ctx, err, "failed to dial to "+addr)
 					return nil, err
 				}
 			}
-			negotiatedProtocol, negotiatedProtocolIsMutual := cn.NegotiatedProtocol()
+			negotiatedProtocol := cn.NegotiatedProtocol()
 			if negotiatedProtocol != http2.NextProtoTLS {
-				return nil, newError("http2: unexpected ALPN protocol " + negotiatedProtocol + "; want q" + http2.NextProtoTLS).AtError()
-			}
-			if !negotiatedProtocolIsMutual {
-				return nil, newError("http2: could not negotiate protocol mutually").AtError()
+				return nil, errors.New("http2: unexpected ALPN protocol " + negotiatedProtocol + "; want q" + http2.NextProtoTLS).AtError()
 			}
 			return cn, nil
 		},
@@ -171,12 +170,21 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 	go func() {
 		response, err := client.Do(request)
 		if err != nil {
-			newError("failed to dial to ", dest).Base(err).AtWarning().WriteToLog(session.ExportIDToError(ctx))
+			errors.LogWarningInner(ctx, err, "failed to dial to ", dest)
 			wrc.Close()
+			{
+				// Abandon `client` if `client.Do(request)` failed
+				// See https://github.com/golang/go/issues/30702
+				globalDialerAccess.Lock()
+				if globalDialerMap[dialerConf{dest, streamSettings}] == client {
+					delete(globalDialerMap, dialerConf{dest, streamSettings})
+				}
+				globalDialerAccess.Unlock()
+			}
 			return
 		}
 		if response.StatusCode != 200 {
-			newError("unexpected status", response.StatusCode).AtWarning().WriteToLog(session.ExportIDToError(ctx))
+			errors.LogWarning(ctx, "unexpected status", response.StatusCode)
 			wrc.Close()
 			return
 		}

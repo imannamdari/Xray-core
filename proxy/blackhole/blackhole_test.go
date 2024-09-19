@@ -7,13 +7,15 @@ import (
 	"github.com/imannamdari/xray-core/common"
 	"github.com/imannamdari/xray-core/common/buf"
 	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/imannamdari/xray-core/common/session"
 	"github.com/imannamdari/xray-core/proxy/blackhole"
 	"github.com/imannamdari/xray-core/transport"
 	"github.com/imannamdari/xray-core/transport/pipe"
 )
 
 func TestBlackholeHTTPResponse(t *testing.T) {
-	handler, err := blackhole.New(context.Background(), &blackhole.Config{
+	ctx := session.ContextWithOutbounds(context.Background(), []*session.Outbound{{}})
+	handler, err := blackhole.New(ctx, &blackhole.Config{
 		Response: serial.ToTypedMessage(&blackhole.HTTPResponse{}),
 	})
 	common.Must(err)
@@ -32,7 +34,7 @@ func TestBlackholeHTTPResponse(t *testing.T) {
 		Reader: reader,
 		Writer: writer,
 	}
-	common.Must(handler.Process(context.Background(), &link, nil))
+	common.Must(handler.Process(ctx, &link, nil))
 	common.Must(rerr)
 	if mb.IsEmpty() {
 		t.Error("expect http response, but nothing")

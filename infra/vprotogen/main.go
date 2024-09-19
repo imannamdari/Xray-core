@@ -108,7 +108,7 @@ func getProjectProtocVersion(url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("can not read from body")
 	}
-	versionRegexp := regexp.MustCompile(`\/\/\s*protoc\s*v(\d+\.\d+\.\d+)`)
+	versionRegexp := regexp.MustCompile(`\/\/\s*protoc\s*v\d+\.(\d+\.\d+)`)
 	matched := versionRegexp.FindStringSubmatch(string(body))
 	return matched[1], nil
 }
@@ -120,7 +120,7 @@ func getInstalledProtocVersion(protocPath string) (string, error) {
 	if cmdErr != nil {
 		return "", cmdErr
 	}
-	versionRegexp := regexp.MustCompile(`protoc\s*(\d+\.\d+\.\d+)`)
+	versionRegexp := regexp.MustCompile(`protoc\s*(\d+\.\d+)`)
 	matched := versionRegexp.FindStringSubmatch(string(output))
 	return matched[1], nil
 }
@@ -174,11 +174,14 @@ func main() {
 		suffix = ".exe"
 	}
 
-	targetedVersion, err := getProjectProtocVersion("https://raw.githubusercontent.com/xtls/xray-core/HEAD/core/config.pb.go")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	/*
+		targetedVersion, err := getProjectProtocVersion("https://raw.githubusercontent.com/XTLS/Xray-core/HEAD/core/config.pb.go")
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	*/
+	targetedVersion := ""
 
 	protoc, err := whichProtoc(suffix, targetedVersion)
 	if err != nil {

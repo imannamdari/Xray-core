@@ -5,20 +5,18 @@ import (
 	"context"
 	"math/rand"
 
+	c "github.com/imannamdari/xray-core/common/ctx"
 	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/imannamdari/xray-core/common/net"
 	"github.com/imannamdari/xray-core/common/protocol"
 	"github.com/imannamdari/xray-core/common/signal"
 )
 
-// ID of a session.
-type ID uint32
-
 // NewID generates a new ID. The generated ID is high likely to be unique, but not cryptographically secure.
 // The generated ID will never be 0.
-func NewID() ID {
+func NewID() c.ID {
 	for {
-		id := ID(rand.Uint32())
+		id := c.ID(rand.Uint32())
 		if id != 0 {
 			return id
 		}
@@ -28,7 +26,7 @@ func NewID() ID {
 // ExportIDToError transfers session.ID into an error object, for logging purpose.
 // This can be used with error.WriteToLog().
 func ExportIDToError(ctx context.Context) errors.ExportOption {
-	id := IDFromContext(ctx)
+	id := c.IDFromContext(ctx)
 	return func(h *errors.ExportOptionHolder) {
 		h.SessionID = uint32(id)
 	}
@@ -42,21 +40,36 @@ type Inbound struct {
 	Gateway net.Destination
 	// Tag of the inbound proxy that handles the connection.
 	Tag string
-	// User is the user that authencates for the inbound. May be nil if the protocol allows anounymous traffic.
+	// Name of the inbound proxy that handles the connection.
+	Name string
+	// User is the user that authenticates for the inbound. May be nil if the protocol allows anonymous traffic.
 	User *protocol.MemoryUser
 	// Conn is actually internet.Connection. May be nil.
 	Conn net.Conn
 	// Timer of the inbound buf copier. May be nil.
 	Timer *signal.ActivityTimer
+	// CanSpliceCopy is a property for this connection
+	// 1 = can, 2 = after processing protocol info should be able to, 3 = cannot
+	CanSpliceCopy int
 }
 
 // Outbound is the metadata of an outbound connection.
 type Outbound struct {
 	// Target address of the outbound connection.
-	Target      net.Destination
-	RouteTarget net.Destination
+	OriginalTarget net.Destination
+	Target         net.Destination
+	RouteTarget    net.Destination
 	// Gateway address
 	Gateway net.Address
+	// Tag of the outbound proxy that handles the connection.
+	Tag string
+	// Name of the outbound proxy that handles the connection.
+	Name string
+	// Conn is actually internet.Connection. May be nil. It is currently nil for outbound with proxySettings
+	Conn net.Conn
+	// CanSpliceCopy is a property for this connection
+	// 1 = can, 2 = after processing protocol info should be able to, 3 = cannot
+	CanSpliceCopy int
 }
 
 // SniffingRequest controls the behavior of content sniffing.

@@ -19,6 +19,7 @@ func main() {
 		},
 		base.RootCommand.Commands...,
 	)
+
 	base.Execute()
 }
 

@@ -1,8 +1,10 @@
 package conf
 
 import (
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/imannamdari/xray-core/app/observatory"
+	"github.com/imannamdari/xray-core/app/observatory/burst"
 	"github.com/imannamdari/xray-core/infra/conf/cfgcommon/duration"
 )
 
@@ -15,4 +17,18 @@ type ObservatoryConfig struct {
 
 func (o *ObservatoryConfig) Build() (proto.Message, error) {
 	return &observatory.Config{SubjectSelector: o.SubjectSelector, ProbeUrl: o.ProbeURL, ProbeInterval: int64(o.ProbeInterval), EnableConcurrency: o.EnableConcurrency}, nil
+}
+
+type BurstObservatoryConfig struct {
+	SubjectSelector []string `json:"subjectSelector"`
+	// health check settings
+	HealthCheck *healthCheckSettings `json:"pingConfig,omitempty"`
+}
+
+func (b BurstObservatoryConfig) Build() (proto.Message, error) {
+	if result, err := b.HealthCheck.Build(); err == nil {
+		return &burst.Config{SubjectSelector: b.SubjectSelector, PingConfig: result.(*burst.HealthPingConfig)}, nil
+	} else {
+		return nil, err
+	}
 }

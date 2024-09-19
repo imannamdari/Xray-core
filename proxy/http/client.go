@@ -14,6 +14,7 @@ import (
 	"github.com/imannamdari/xray-core/common"
 	"github.com/imannamdari/xray-core/common/buf"
 	"github.com/imannamdari/xray-core/common/bytespool"
+	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/imannamdari/xray-core/common/net"
 	"github.com/imannamdari/xray-core/common/protocol"
 	"github.com/imannamdari/xray-core/common/retry"
@@ -51,12 +52,12 @@ func NewClient(ctx context.Context, config *ClientConfig) (*Client, error) {
 	for _, rec := range config.Server {
 		s, err := protocol.NewServerSpecFromPB(rec)
 		if err != nil {
-			return nil, newError("failed to get server spec").Base(err)
+			return nil, errors.New("failed to get server spec").Base(err)
 		}
 		serverList.AddServer(s)
 	}
 	if serverList.Size() == 0 {
-		return nil, newError("0 target server")
+		return nil, errors.New("0 target server")
 	}
 
 	v := core.MustFromContext(ctx)
@@ -69,15 +70,18 @@ func NewClient(ctx context.Context, config *ClientConfig) (*Client, error) {
 
 // Process implements proxy.Outbound.Process. We first create a socket tunnel via HTTP CONNECT method, then redirect all inbound traffic to that tunnel.
 func (c *Client) Process(ctx context.Context, link *transport.Link, dialer internet.Dialer) error {
-	outbound := session.OutboundFromContext(ctx)
-	if outbound == nil || !outbound.Target.IsValid() {
-		return newError("target not specified.")
+	outbounds := session.OutboundsFromContext(ctx)
+	ob := outbounds[len(outbounds)-1]
+	if !ob.Target.IsValid() {
+		return errors.New("target not specified.")
 	}
-	target := outbound.Target
+	ob.Name = "http"
+	ob.CanSpliceCopy = 2
+	target := ob.Target
 	targetAddr := target.NetAddr()
 
 	if target.Network == net.Network_UDP {
-		return newError("UDP is not supported by HTTP outbound")
+		return errors.New("UDP is not supported by HTTP outbound")
 	}
 
 	var user *protocol.MemoryUser
@@ -94,7 +98,7 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 
 	header, err := fillRequestHeader(ctx, c.header)
 	if err != nil {
-		return newError("failed to fill out header").Base(err)
+		return errors.New("failed to fill out header").Base(err)
 	}
 
 	if err := retry.ExponentialBackoff(5, 100).On(func() error {
@@ -114,12 +118,12 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 		}
 		return err
 	}); err != nil {
-		return newError("failed to find an available destination").Base(err)
+		return errors.New("failed to find an available destination").Base(err)
 	}
 
 	defer func() {
 		if err := conn.Close(); err != nil {
-			newError("failed to closed connection").Base(err).WriteToLog(session.ExportIDToError(ctx))
+			errors.LogInfoInner(ctx, err, "failed to closed connection")
 		}
 	}()
 
@@ -128,8 +132,19 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 		p = c.policyManager.ForLevel(user.Level)
 	}
 
+	var newCtx context.Context
+	var newCancel context.CancelFunc
+	if session.TimeoutOnlyFromContext(ctx) {
+		newCtx, newCancel = context.WithCancel(context.Background())
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
-	timer := signal.CancelAfterInactivity(ctx, cancel, p.Timeouts.ConnectionIdle)
+	timer := signal.CancelAfterInactivity(ctx, func() {
+		cancel()
+		if newCancel != nil {
+			newCancel()
+		}
+	}, p.Timeouts.ConnectionIdle)
 
 	requestFunc := func() error {
 		defer timer.SetTimeout(p.Timeouts.DownlinkOnly)
@@ -140,9 +155,13 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 		return buf.Copy(buf.NewReader(conn), link.Writer, buf.UpdateActivity(timer))
 	}
 
+	if newCtx != nil {
+		ctx = newCtx
+	}
+
 	responseDonePost := task.OnSuccess(responseFunc, task.Close(link.Writer))
 	if err := task.Run(ctx, requestFunc, responseDonePost); err != nil {
-		return newError("connection ends").Base(err)
+		return errors.New("connection ends").Base(err)
 	}
 
 	return nil
@@ -155,14 +174,19 @@ func fillRequestHeader(ctx context.Context, header []*Header) ([]*Header, error)
 	}
 
 	inbound := session.InboundFromContext(ctx)
-	outbound := session.OutboundFromContext(ctx)
+	outbounds := session.OutboundsFromContext(ctx)
+	ob := outbounds[len(outbounds)-1]
+
+	if inbound == nil || ob == nil {
+		return nil, errors.New("missing inbound or outbound metadata from context")
+	}
 
 	data := struct {
 		Source net.Destination
 		Target net.Destination
 	}{
 		Source: inbound.Source,
-		Target: outbound.Target,
+		Target: ob.Target,
 	}
 
 	filled := make([]*Header, len(header))
@@ -219,7 +243,7 @@ func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, u
 
 		if resp.StatusCode != http.StatusOK {
 			rawConn.Close()
-			return nil, newError("Proxy responded with non 200 code: " + resp.Status)
+			return nil, errors.New("Proxy responded with non 200 code: " + resp.Status)
 		}
 		return rawConn, nil
 	}
@@ -251,7 +275,7 @@ func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, u
 
 		if resp.StatusCode != http.StatusOK {
 			rawConn.Close()
-			return nil, newError("Proxy responded with non 200 code: " + resp.Status)
+			return nil, errors.New("Proxy responded with non 200 code: " + resp.Status)
 		}
 		return newHTTP2Conn(rawConn, pw, resp.Body), nil
 	}
@@ -284,7 +308,7 @@ func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, u
 
 	nextProto := ""
 	if tlsConn, ok := iConn.(*tls.Conn); ok {
-		if err := tlsConn.Handshake(); err != nil {
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
 			rawConn.Close()
 			return nil, err
 		}
@@ -321,7 +345,7 @@ func setUpHTTPTunnel(ctx context.Context, dest net.Destination, target string, u
 
 		return proxyConn, err
 	default:
-		return nil, newError("negotiated unsupported application layer protocol: " + nextProto)
+		return nil, errors.New("negotiated unsupported application layer protocol: " + nextProto)
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/imannamdari/xray-core/app/dispatcher"
 	"github.com/imannamdari/xray-core/app/log"
@@ -18,15 +17,12 @@ import (
 	"github.com/imannamdari/xray-core/common/serial"
 	core "github.com/imannamdari/xray-core/core"
 	. "github.com/imannamdari/xray-core/infra/conf"
-	"github.com/imannamdari/xray-core/proxy/blackhole"
-	dns_proxy "github.com/imannamdari/xray-core/proxy/dns"
-	"github.com/imannamdari/xray-core/proxy/freedom"
 	"github.com/imannamdari/xray-core/proxy/vmess"
 	"github.com/imannamdari/xray-core/proxy/vmess/inbound"
 	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/http"
 	"github.com/imannamdari/xray-core/transport/internet/tls"
 	"github.com/imannamdari/xray-core/transport/internet/websocket"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestXrayConfig(t *testing.T) {
@@ -43,39 +39,10 @@ func TestXrayConfig(t *testing.T) {
 	runMultiTestCase(t, []TestCase{
 		{
 			Input: `{
-				"outbound": {
-					"protocol": "freedom",
-					"settings": {}
-				},
 				"log": {
 					"access": "/var/log/xray/access.log",
 					"loglevel": "error",
 					"error": "/var/log/xray/error.log"
-				},
-				"inbound": {
-					"streamSettings": {
-						"network": "ws",
-						"wsSettings": {
-							"headers": {
-								"host": "example.domain"
-							},
-							"path": ""
-						},
-						"tlsSettings": {
-							"alpn": "h2"
-						},
-						"security": "tls"
-					},
-					"protocol": "vmess",
-					"port": 443,
-					"settings": {
-						"clients": [
-							{
-								"security": "aes-128-gcm",
-								"id": "0cdf8a45-303d-4fed-9780-29aa7f54175e"
-							}
-						]
-					}
 				},
 				"inbounds": [{
 					"streamSettings": {
@@ -106,33 +73,16 @@ func TestXrayConfig(t *testing.T) {
 						]
 					}
 				}],
-				"outboundDetour": [
-					{
-						"tag": "blocked",
-						"protocol": "blackhole"
-					},
-					{
-						"protocol": "dns"
-					}
-				],
 				"routing": {
-					"strategy": "rules",
-					"settings": {
-						"rules": [
-							{
-								"ip": [
-									"10.0.0.0/8"
-								],
-								"type": "field",
-								"outboundTag": "blocked"
-							}
-						]
-					}
-				},
-				"transport": {
-					"httpSettings": {
-						"path": "/test"
-					}
+					"rules": [
+						{
+							"ip": [
+								"10.0.0.0/8"
+							],
+							"type": "field",
+							"outboundTag": "blocked"
+						}
+					]
 				}
 			}`,
 			Parser: createParser(),
@@ -169,109 +119,7 @@ func TestXrayConfig(t *testing.T) {
 						},
 					}),
 				},
-				Outbound: []*core.OutboundHandlerConfig{
-					{
-						SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{
-							StreamSettings: &internet.StreamConfig{
-								ProtocolName: "tcp",
-								TransportSettings: []*internet.TransportConfig{
-									{
-										ProtocolName: "http",
-										Settings: serial.ToTypedMessage(&http.Config{
-											Path: "/test",
-										}),
-									},
-								},
-							},
-						}),
-						ProxySettings: serial.ToTypedMessage(&freedom.Config{
-							DomainStrategy: freedom.Config_AS_IS,
-							UserLevel:      0,
-						}),
-					},
-					{
-						Tag: "blocked",
-						SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{
-							StreamSettings: &internet.StreamConfig{
-								ProtocolName: "tcp",
-								TransportSettings: []*internet.TransportConfig{
-									{
-										ProtocolName: "http",
-										Settings: serial.ToTypedMessage(&http.Config{
-											Path: "/test",
-										}),
-									},
-								},
-							},
-						}),
-						ProxySettings: serial.ToTypedMessage(&blackhole.Config{}),
-					},
-					{
-						SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{
-							StreamSettings: &internet.StreamConfig{
-								ProtocolName: "tcp",
-								TransportSettings: []*internet.TransportConfig{
-									{
-										ProtocolName: "http",
-										Settings: serial.ToTypedMessage(&http.Config{
-											Path: "/test",
-										}),
-									},
-								},
-							},
-						}),
-						ProxySettings: serial.ToTypedMessage(&dns_proxy.Config{
-							Server: &net.Endpoint{},
-						}),
-					},
-				},
 				Inbound: []*core.InboundHandlerConfig{
-					{
-						ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
-							PortList: &net.PortList{Range: []*net.PortRange{net.SinglePortRange(443)}},
-							StreamSettings: &internet.StreamConfig{
-								ProtocolName: "websocket",
-								TransportSettings: []*internet.TransportConfig{
-									{
-										ProtocolName: "websocket",
-										Settings: serial.ToTypedMessage(&websocket.Config{
-											Header: []*websocket.Header{
-												{
-													Key:   "host",
-													Value: "example.domain",
-												},
-											},
-										}),
-									},
-									{
-										ProtocolName: "http",
-										Settings: serial.ToTypedMessage(&http.Config{
-											Path: "/test",
-										}),
-									},
-								},
-								SecurityType: "xray.transport.internet.tls.Config",
-								SecuritySettings: []*serial.TypedMessage{
-									serial.ToTypedMessage(&tls.Config{
-										NextProtocol: []string{"h2"},
-									}),
-								},
-							},
-						}),
-						ProxySettings: serial.ToTypedMessage(&inbound.Config{
-							User: []*protocol.User{
-								{
-									Level: 0,
-									Account: serial.ToTypedMessage(&vmess.Account{
-										Id: "0cdf8a45-303d-4fed-9780-29aa7f54175e",
-										SecuritySettings: &protocol.SecurityConfig{
-											Type: protocol.SecurityType_AES128_GCM,
-										},
-									}),
-								},
-							},
-						}),
-					},
 					{
 						ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
 							PortList: &net.PortList{Range: []*net.PortRange{{
@@ -290,18 +138,10 @@ func TestXrayConfig(t *testing.T) {
 									{
 										ProtocolName: "websocket",
 										Settings: serial.ToTypedMessage(&websocket.Config{
-											Header: []*websocket.Header{
-												{
-													Key:   "host",
-													Value: "example.domain",
-												},
+											Host: "example.domain",
+											Header: map[string]string{
+												"host": "example.domain",
 											},
-										}),
-									},
-									{
-										ProtocolName: "http",
-										Settings: serial.ToTypedMessage(&http.Config{
-											Path: "/test",
 										}),
 									},
 								},
@@ -340,24 +180,35 @@ func TestMuxConfig_Build(t *testing.T) {
 		want   *proxyman.MultiplexingConfig
 	}{
 		{"default", `{"enabled": true, "concurrency": 16}`, &proxyman.MultiplexingConfig{
-			Enabled:     true,
-			Concurrency: 16,
+			Enabled:         true,
+			Concurrency:     16,
+			XudpConcurrency: 0,
+			XudpProxyUDP443: "reject",
 		}},
 		{"empty def", `{}`, &proxyman.MultiplexingConfig{
-			Enabled:     false,
-			Concurrency: 8,
+			Enabled:         false,
+			Concurrency:     0,
+			XudpConcurrency: 0,
+			XudpProxyUDP443: "reject",
 		}},
 		{"not enable", `{"enabled": false, "concurrency": 4}`, &proxyman.MultiplexingConfig{
-			Enabled:     false,
-			Concurrency: 4,
+			Enabled:         false,
+			Concurrency:     4,
+			XudpConcurrency: 0,
+			XudpProxyUDP443: "reject",
 		}},
-		{"forbidden", `{"enabled": false, "concurrency": -1}`, nil},
+		{"forbidden", `{"enabled": false, "concurrency": -1}`, &proxyman.MultiplexingConfig{
+			Enabled:         false,
+			Concurrency:     -1,
+			XudpConcurrency: 0,
+			XudpProxyUDP443: "reject",
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &MuxConfig{}
 			common.Must(json.Unmarshal([]byte(tt.fields), m))
-			if got := m.Build(); !reflect.DeepEqual(got, tt.want) {
+			if got, _ := m.Build(); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("MuxConfig.Build() = %v, want %v", got, tt.want)
 			}
 		})
@@ -379,7 +230,6 @@ func TestConfig_Override(t *testing.T) {
 				LogConfig:    &LogConfig{},
 				RouterConfig: &RouterConfig{},
 				DNSConfig:    &DNSConfig{},
-				Transport:    &TransportConfig{},
 				Policy:       &PolicyConfig{},
 				API:          &APIConfig{},
 				Stats:        &StatsConfig{},
@@ -390,7 +240,6 @@ func TestConfig_Override(t *testing.T) {
 				LogConfig:    &LogConfig{},
 				RouterConfig: &RouterConfig{},
 				DNSConfig:    &DNSConfig{},
-				Transport:    &TransportConfig{},
 				Policy:       &PolicyConfig{},
 				API:          &APIConfig{},
 				Stats:        &StatsConfig{},
@@ -415,7 +264,7 @@ func TestConfig_Override(t *testing.T) {
 			&Config{InboundConfigs: []InboundDetourConfig{{Tag: "pos0"}, {Protocol: "vmess", Tag: "pos1"}}},
 			&Config{InboundConfigs: []InboundDetourConfig{{Tag: "pos1", Protocol: "kcp"}, {Tag: "pos2", Protocol: "kcp"}}},
 			"",
-			&Config{InboundConfigs: []InboundDetourConfig{{Tag: "pos1", Protocol: "kcp"}, {Tag: "pos2", Protocol: "kcp"}}},
+			&Config{InboundConfigs: []InboundDetourConfig{{Tag: "pos0"}, {Tag: "pos1", Protocol: "kcp"}, {Tag: "pos2", Protocol: "kcp"}}},
 		},
 		{
 			"replace/notag-append",
@@ -433,10 +282,10 @@ func TestConfig_Override(t *testing.T) {
 		},
 		{
 			"replace/outbounds-prepend",
-			&Config{OutboundConfigs: []OutboundDetourConfig{{Tag: "pos0"}, {Protocol: "vmess", Tag: "pos1"}}},
-			&Config{OutboundConfigs: []OutboundDetourConfig{{Tag: "pos1", Protocol: "kcp"}, {Tag: "pos2", Protocol: "kcp"}}},
+			&Config{OutboundConfigs: []OutboundDetourConfig{{Tag: "pos0"}, {Protocol: "vmess", Tag: "pos1"}, {Tag: "pos3"}}},
+			&Config{OutboundConfigs: []OutboundDetourConfig{{Tag: "pos1", Protocol: "kcp"}, {Tag: "pos2", Protocol: "kcp"}, {Tag: "pos4", Protocol: "kcp"}}},
 			"config.json",
-			&Config{OutboundConfigs: []OutboundDetourConfig{{Tag: "pos1", Protocol: "kcp"}, {Tag: "pos2", Protocol: "kcp"}}},
+			&Config{OutboundConfigs: []OutboundDetourConfig{{Tag: "pos2", Protocol: "kcp"}, {Tag: "pos4", Protocol: "kcp"}, {Tag: "pos0"}, {Tag: "pos1", Protocol: "kcp"}, {Tag: "pos3"}}},
 		},
 		{
 			"replace/outbounds-append",

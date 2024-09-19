@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/imannamdari/xray-core/app/dns"
 	"github.com/imannamdari/xray-core/app/router"
 	"github.com/imannamdari/xray-core/common"
@@ -14,6 +13,7 @@ import (
 	"github.com/imannamdari/xray-core/common/platform"
 	"github.com/imannamdari/xray-core/common/platform/filesystem"
 	. "github.com/imannamdari/xray-core/infra/conf"
+	"google.golang.org/protobuf/proto"
 )
 
 func init() {

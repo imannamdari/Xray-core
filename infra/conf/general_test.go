@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/imannamdari/xray-core/common"
 	. "github.com/imannamdari/xray-core/infra/conf"
+	"google.golang.org/protobuf/proto"
 )
 
 func loadJSON(creator func() Buildable) func(string) (proto.Message, error) {

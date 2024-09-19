@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/imannamdari/xray-core/common/net"
 	"github.com/imannamdari/xray-core/common/net/cnc"
 	http_proto "github.com/imannamdari/xray-core/common/protocol/http"
 	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/common/session"
 	"github.com/imannamdari/xray-core/common/signal/done"
 	"github.com/imannamdari/xray-core/transport/internet"
 	"github.com/imannamdari/xray-core/transport/internet/reality"
@@ -27,7 +27,6 @@ type Listener struct {
 	handler internet.ConnHandler
 	local   net.Addr
 	config  *Config
-	locker  *internet.FileLocker // for unix domain socket
 }
 
 func (l *Listener) Addr() net.Addr {
@@ -35,9 +34,6 @@ func (l *Listener) Addr() net.Addr {
 }
 
 func (l *Listener) Close() error {
-	if l.locker != nil {
-		l.locker.Release()
-	}
 	return l.server.Close()
 }
 
@@ -93,7 +89,7 @@ func (l *Listener) ServeHTTP(writer http.ResponseWriter, request *http.Request) 
 	remoteAddr := l.Addr()
 	dest, err := net.ParseDestination(request.RemoteAddr)
 	if err != nil {
-		newError("failed to parse request remote addr: ", request.RemoteAddr).Base(err).WriteToLog()
+		errors.LogInfoInner(context.Background(), err, "failed to parse request remote addr: ", request.RemoteAddr)
 	} else {
 		remoteAddr = &net.TCPAddr{
 			IP:   dest.Address.IP(),
@@ -164,7 +160,7 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 	}
 
 	if streamSettings.SocketSettings != nil && streamSettings.SocketSettings.AcceptProxyProtocol {
-		newError("accepting PROXY protocol").AtWarning().WriteToLog(session.ExportIDToError(ctx))
+		errors.LogWarning(ctx, "accepting PROXY protocol")
 	}
 
 	listener.server = server
@@ -177,12 +173,8 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 				Net:  "unix",
 			}, streamSettings.SocketSettings)
 			if err != nil {
-				newError("failed to listen on ", address).Base(err).AtError().WriteToLog(session.ExportIDToError(ctx))
+				errors.LogErrorInner(ctx, err, "failed to listen on ", address)
 				return
-			}
-			locker := ctx.Value(address.Domain())
-			if locker != nil {
-				listener.locker = locker.(*internet.FileLocker)
 			}
 		} else { // tcp
 			streamListener, err = internet.ListenSystem(ctx, &net.TCPAddr{
@@ -190,7 +182,7 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 				Port: int(port),
 			}, streamSettings.SocketSettings)
 			if err != nil {
-				newError("failed to listen on ", address, ":", port).Base(err).AtError().WriteToLog(session.ExportIDToError(ctx))
+				errors.LogErrorInner(ctx, err, "failed to listen on ", address, ":", port)
 				return
 			}
 		}
@@ -201,12 +193,12 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
 			}
 			err = server.Serve(streamListener)
 			if err != nil {
-				newError("stopping serving H2C or REALITY H2").Base(err).WriteToLog(session.ExportIDToError(ctx))
+				errors.LogInfoInner(ctx, err, "stopping serving H2C or REALITY H2")
 			}
 		} else {
 			err = server.ServeTLS(streamListener, "", "")
 			if err != nil {
-				newError("stopping serving TLS H2").Base(err).WriteToLog(session.ExportIDToError(ctx))
+				errors.LogInfoInner(ctx, err, "stopping serving TLS H2")
 			}
 		}
 	}()
