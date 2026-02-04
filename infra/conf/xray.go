@@ -378,6 +378,7 @@ type Config struct {
 	FakeDNS          *FakeDNSConfig          `json:"fakeDns"`
 	Observatory      *ObservatoryConfig      `json:"observatory"`
 	BurstObservatory *BurstObservatoryConfig `json:"burstObservatory"`
+	SSHConfig        *SSHConfig              `json:"ssh"`
 }
 
 func (c *Config) findInboundTag(tag string) int {
@@ -444,6 +445,10 @@ func (c *Config) Override(o *Config, fn string) {
 
 	if o.BurstObservatory != nil {
 		c.BurstObservatory = o.BurstObservatory
+	}
+
+	if o.SSHConfig != nil {
+		c.SSHConfig = o.SSHConfig
 	}
 
 	// update the Inbound in slice if the only one in override config has same tag
@@ -584,6 +589,14 @@ func (c *Config) Build() (*core.Config, error) {
 			return nil, err
 		}
 		config.App = append(config.App, serial.ToTypedMessage(r))
+	}
+
+	if c.SSHConfig != nil {
+		sshApp, err := c.SSHConfig.Build()
+		if err != nil {
+			return nil, errors.New("failed to parse SSH config").Base(err)
+		}
+		config.App = append(config.App, serial.ToTypedMessage(sshApp))
 	}
 
 	var inbounds []InboundDetourConfig

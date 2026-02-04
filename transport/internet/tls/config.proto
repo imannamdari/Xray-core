@@ -85,7 +85,7 @@ message Config {
 
   string master_key_log = 15;
 
-    // Enable this if you want tls client hello encryption.
+  // Enable this if you want tls client hello encryption.
   bool enable_ech = 16;
   ECHSetting ech_setting = 17;
 }
