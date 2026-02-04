@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package xray.app.ssh;
+option go_package = "github.com/imannamdari/xray-core/app/ssh";
+
+message Config {
+  bool enabled = 1;
+  string ip = 2;
+  string user = 3;
+  string password = 4;
+  int32 runningPort = 5;
+}
