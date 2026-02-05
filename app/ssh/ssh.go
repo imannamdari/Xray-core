@@ -22,6 +22,7 @@ type SSH struct {
 	runningPort int32
 
 	listener *net.Listener
+	closeCh chan struct{}
 }
 
 func New(ctx context.Context, config *Config) (*SSH, error) {
@@ -31,6 +32,7 @@ func New(ctx context.Context, config *Config) (*SSH, error) {
 		user:        config.GetUser(),
 		password:    config.GetPassword(),
 		runningPort: config.GetRunningPort(),
+		closeCh: make(chan struct{}),
 	}
 	return sshS, nil
 }
@@ -41,6 +43,7 @@ func (s *SSH) Type() interface{} {
 
 func (s *SSH) Start() error {
 	if s.enabled {
+		s.closeCh = make(chan struct{})
 		if err := s.startTunnel(); err != nil {
 			return fmt.Errorf("failed to start tunnel: %w", err)
 		}
@@ -50,9 +53,11 @@ func (s *SSH) Start() error {
 
 func (s *SSH) Close() error {
 	if s.listener != nil {
+		close(s.closeCh)
 		if err := (*s.listener).Close(); err != nil {
 			return fmt.Errorf("failed to close listener: %w", err)
 		}
+		s.listener = nil
 	}
 	return nil
 }
@@ -68,18 +73,27 @@ func (s *SSH) startTunnel() error {
 		return fmt.Errorf("failed to dial ssh tcp: %w", err)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+fmt.Sprintf("%d", s.runningPort))
-	s.listener = &listener
 	if err != nil {
 		return fmt.Errorf("failed to listen on %d: %w", s.runningPort, err)
 	}
+	s.listener = &listener
 	go func() {
 		for {
-			localConn, _ := listener.Accept()
-			go func() {
-				if err := s.handleSocks(c, localConn); err != nil {
-					logrus.WithError(err).Error("failed to handle socks")
+			select {
+			case <-s.closeCh:
+				return
+			default:
+				localConn, err := listener.Accept()
+				if err != nil {
+					logrus.WithError(err).Error("failed to accept new connect")
+					continue
 				}
-			}()
+				go func() {
+					if err := s.handleSocks(c, localConn); err != nil {
+						logrus.WithError(err).Error("failed to handle socks")
+					}
+				}()
+			}
 		}
 	}()
 	return nil
