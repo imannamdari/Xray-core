@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/imannamdari/xray-core/common"
+	sshFeature "github.com/imannamdari/xray-core/features/ssh"
 )
 
 type SSH struct {
@@ -19,6 +20,8 @@ type SSH struct {
 	user        string
 	password    string
 	runningPort int32
+
+	listener *net.Listener
 }
 
 func New(ctx context.Context, config *Config) (*SSH, error) {
@@ -29,13 +32,29 @@ func New(ctx context.Context, config *Config) (*SSH, error) {
 		password:    config.GetPassword(),
 		runningPort: config.GetRunningPort(),
 	}
-	if sshS.enabled {
-		if err := sshS.startTunnel(); err != nil {
-			logrus.WithError(err).Error("failed to start ssh tunnel")
-			return nil, fmt.Errorf("failed to start tunnel: %w", err)
+	return sshS, nil
+}
+
+func (s *SSH) Type() interface{} {
+	return (*sshFeature.SSHEngine)(nil)
+}
+
+func (s *SSH) Start() error {
+	if s.enabled {
+		if err := s.startTunnel(); err != nil {
+			return fmt.Errorf("failed to start tunnel: %w", err)
 		}
 	}
-	return sshS, nil
+	return nil
+}
+
+func (s *SSH) Close() error {
+	if s.listener != nil {
+		if err := (*s.listener).Close(); err != nil {
+			return fmt.Errorf("failed to close listener: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *SSH) startTunnel() error {
@@ -49,6 +68,7 @@ func (s *SSH) startTunnel() error {
 		return fmt.Errorf("failed to dial ssh tcp: %w", err)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+fmt.Sprintf("%d", s.runningPort))
+	s.listener = &listener
 	if err != nil {
 		return fmt.Errorf("failed to listen on %d: %w", s.runningPort, err)
 	}
