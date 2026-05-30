@@ -8,19 +8,26 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/transport/internet"
-	. "github.com/imannamdari/xray-core/transport/internet/kcp"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/transport/internet"
+	. "github.com/xtls/xray-core/transport/internet/kcp"
+	"github.com/xtls/xray-core/transport/internet/stat"
 	"golang.org/x/sync/errgroup"
 )
 
 func TestDialAndListen(t *testing.T) {
 	listerner, err := NewListener(context.Background(), net.LocalHostIP, net.Port(0), &internet.MemoryStreamConfig{
-		ProtocolName:     "mkcp",
-		ProtocolSettings: &Config{},
+		ProtocolName: "mkcp",
+		ProtocolSettings: &Config{
+			Mtu:              1350,
+			Tti:              50,
+			UplinkCapacity:   5,
+			DownlinkCapacity: 20,
+			CwndMultiplier:   20,
+			MaxSendingWindow: 2 * 1024 * 1024,
+		},
 	}, func(conn stat.Connection) {
 		go func(c stat.Connection) {
 			payload := make([]byte, 4096)
@@ -46,8 +53,15 @@ func TestDialAndListen(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		errg.Go(func() error {
 			clientConn, err := DialKCP(context.Background(), net.UDPDestination(net.LocalHostIP, port), &internet.MemoryStreamConfig{
-				ProtocolName:     "mkcp",
-				ProtocolSettings: &Config{},
+				ProtocolName: "mkcp",
+				ProtocolSettings: &Config{
+					Mtu:              1350,
+					Tti:              50,
+					UplinkCapacity:   5,
+					DownlinkCapacity: 20,
+					CwndMultiplier:   20,
+					MaxSendingWindow: 2 * 1024 * 1024,
+				},
 			})
 			if err != nil {
 				return err

@@ -5,20 +5,23 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	v2net "github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal/done"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/extension"
-	"github.com/imannamdari/xray-core/features/outbound"
-	"github.com/imannamdari/xray-core/transport/internet/tagged"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	v2net "github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/common/utils"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/extension"
+	"github.com/xtls/xray-core/features/outbound"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/transport/internet/tagged"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -31,7 +34,8 @@ type Observer struct {
 
 	finished *done.Instance
 
-	ohm outbound.Manager
+	ohm        outbound.Manager
+	dispatcher routing.Dispatcher
 }
 
 func (o *Observer) GetObservation(ctx context.Context) (proto.Message, error) {
@@ -67,7 +71,7 @@ func (o *Observer) background() {
 
 		outbounds := hs.Select(o.config.SubjectSelector)
 
-		o.updateStatus(outbounds)
+		o.clearRemovedOutbounds(outbounds)
 
 		sleepTime := time.Second * 10
 		if o.config.ProbeInterval != 0 {
@@ -108,11 +112,19 @@ func (o *Observer) background() {
 	}
 }
 
-func (o *Observer) updateStatus(outbounds []string) {
+func (o *Observer) clearRemovedOutbounds(outbounds []string) {
 	o.statusLock.Lock()
 	defer o.statusLock.Unlock()
-	// TODO should remove old inbound that is removed
-	_ = outbounds
+	if len(o.status) == 0 {
+		return
+	}
+	var pruned []*OutboundStatus
+	for _, status := range o.status {
+		if slices.Contains(outbounds, status.OutboundTag) {
+			pruned = append(pruned, status)
+		}
+	}
+	o.status = pruned
 }
 
 func (o *Observer) probe(outbound string) ProbeResult {
@@ -131,7 +143,7 @@ func (o *Observer) probe(outbound string) ProbeResult {
 					return errors.New("cannot understand address").Base(err)
 				}
 				trackedCtx := session.TrackedConnectionError(o.ctx, errorCollectorForRequest)
-				conn, err := tagged.Dialer(trackedCtx, dest, outbound)
+				conn, err := tagged.Dialer(trackedCtx, o.dispatcher, dest, outbound)
 				if err != nil {
 					return errors.New("cannot dial remote address ", dest).Base(err)
 				}
@@ -160,7 +172,9 @@ func (o *Observer) probe(outbound string) ProbeResult {
 		if o.config.ProbeUrl != "" {
 			probeURL = o.config.ProbeUrl
 		}
-		response, err := httpClient.Get(probeURL)
+		req, _ := http.NewRequest(http.MethodGet, probeURL, nil)
+		utils.TryDefaultHeadersWith(req.Header, "nav")
+		response, err := httpClient.Do(req)
 		if err != nil {
 			return errors.New("outbound failed to relay connection").Base(err)
 		}
@@ -172,7 +186,7 @@ func (o *Observer) probe(outbound string) ProbeResult {
 		return nil
 	})
 	if err != nil {
-		var errorMessage = "the outbound " + outbound + " is dead: GET request failed:" + err.Error() + "with outbound handler report underlying connection failed"
+		errorMessage := "the outbound " + outbound + " is dead: GET request failed:" + err.Error() + "with outbound handler report underlying connection failed"
 		errors.LogInfoInner(o.ctx, errorCollectorForRequest.UnderlyingError(), errorMessage)
 		return ProbeResult{Alive: false, LastErrorReason: errorMessage}
 	}
@@ -215,16 +229,19 @@ func (o *Observer) findStatusLocationLockHolderOnly(outbound string) int {
 
 func New(ctx context.Context, config *Config) (*Observer, error) {
 	var outboundManager outbound.Manager
-	err := core.RequireFeatures(ctx, func(om outbound.Manager) {
+	var dispatcher routing.Dispatcher
+	err := core.RequireFeatures(ctx, func(om outbound.Manager, rd routing.Dispatcher) {
 		outboundManager = om
+		dispatcher = rd
 	})
 	if err != nil {
 		return nil, errors.New("Cannot get depended features").Base(err)
 	}
 	return &Observer{
-		config: config,
-		ctx:    ctx,
-		ohm:    outboundManager,
+		config:     config,
+		ctx:        ctx,
+		ohm:        outboundManager,
+		dispatcher: dispatcher,
 	}, nil
 }
 

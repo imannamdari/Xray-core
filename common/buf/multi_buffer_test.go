@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	. "github.com/imannamdari/xray-core/common/buf"
+	"github.com/xtls/xray-core/common"
+	. "github.com/xtls/xray-core/common/buf"
 )
 
 func TestMultiBufferRead(t *testing.T) {
@@ -171,6 +171,29 @@ func TestCompact(t *testing.T) {
 	cmb := Compact(mb)
 
 	if w := cmb.String(); w != "abbc" {
+		t.Error("unexpected Compact result ", w)
+	}
+}
+
+func TestCompactWithConsumed(t *testing.T) {
+	// make a consumed buffer (a.Start != 0)
+	a := New()
+	for range 8192 {
+		common.Must2(a.WriteString("a"))
+	}
+	a.Read(make([]byte, 2))
+
+	b := New()
+	for range 2 {
+		common.Must2(b.WriteString("b"))
+	}
+
+	mb := MultiBuffer{a, b}
+	cmb := Compact(mb)
+	mbc := &MultiBufferContainer{mb}
+	mbc.Read(make([]byte, 8190))
+
+	if w := cmb.String(); w != "bb" {
 		t.Error("unexpected Compact result ", w)
 	}
 }

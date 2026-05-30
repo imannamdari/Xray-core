@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/imannamdari/xray-core/app/stats"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/features/stats"
+	. "github.com/xtls/xray-core/app/stats"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/features/stats"
 )
 
 func TestInterface(t *testing.T) {
-	_ = (stats.Manager)(new(Manager))
+	_ = stats.Manager(new(Manager))
 }
 
 func TestStatsChannelRunnable(t *testing.T) {

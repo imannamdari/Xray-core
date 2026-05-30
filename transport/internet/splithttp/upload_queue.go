@@ -6,17 +6,21 @@ package splithttp
 import (
 	"container/heap"
 	"io"
+	"runtime"
 	"sync"
 
-	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/errors"
 )
 
 type Packet struct {
+	Reader  io.ReadCloser
 	Payload []byte
 	Seq     uint64
 }
 
 type uploadQueue struct {
+	reader          io.ReadCloser
+	nomore          bool
 	pushedPackets   chan Packet
 	writeCloseMutex sync.Mutex
 	heap            uploadHeap
@@ -40,9 +44,14 @@ func (h *uploadQueue) Push(p Packet) error {
 	defer h.writeCloseMutex.Unlock()
 
 	if h.closed {
-		return errors.New("splithttp packet queue closed")
+		return errors.New("packet queue closed")
 	}
-
+	if h.nomore {
+		return errors.New("h.reader already exists")
+	}
+	if p.Reader != nil {
+		h.nomore = true
+	}
 	h.pushedPackets <- p
 	return nil
 }
@@ -53,12 +62,31 @@ func (h *uploadQueue) Close() error {
 
 	if !h.closed {
 		h.closed = true
+		runtime.Gosched() // hope Read() gets the packet
+	f:
+		for {
+			select {
+			case p := <-h.pushedPackets:
+				if p.Reader != nil {
+					h.reader = p.Reader
+				}
+			default:
+				break f
+			}
+		}
 		close(h.pushedPackets)
+	}
+	if h.reader != nil {
+		return h.reader.Close()
 	}
 	return nil
 }
 
 func (h *uploadQueue) Read(b []byte) (int, error) {
+	if h.reader != nil {
+		return h.reader.Read(b)
+	}
+
 	if h.closed {
 		return 0, io.EOF
 	}
@@ -67,6 +95,10 @@ func (h *uploadQueue) Read(b []byte) (int, error) {
 		packet, more := <-h.pushedPackets
 		if !more {
 			return 0, io.EOF
+		}
+		if packet.Reader != nil {
+			h.reader = packet.Reader
+			return h.reader.Read(b)
 		}
 		heap.Push(&h.heap, packet)
 	}

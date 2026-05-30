@@ -1,11 +1,9 @@
-package retry // import "github.com/imannamdari/xray-core/common/retry"
-
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
+package retry // import "github.com/xtls/xray-core/common/retry"
 
 import (
 	"time"
 
-	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/errors"
 )
 
 var ErrRetryFailed = errors.New("all retry attempts failed")

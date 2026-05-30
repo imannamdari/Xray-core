@@ -7,24 +7,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	udp_proto "github.com/imannamdari/xray-core/common/protocol/udp"
-	"github.com/imannamdari/xray-core/common/retry"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/transport/internet/reality"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
-	"github.com/imannamdari/xray-core/transport/internet/udp"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	udp_proto "github.com/xtls/xray-core/common/protocol/udp"
+	"github.com/xtls/xray-core/common/retry"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/transport/internet/reality"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
+	"github.com/xtls/xray-core/transport/internet/udp"
 )
 
 func init() {
@@ -125,6 +125,21 @@ func (s *Server) RemoveUser(ctx context.Context, e string) error {
 	return s.validator.Del(e)
 }
 
+// GetUser implements proxy.UserManager.GetUser().
+func (s *Server) GetUser(ctx context.Context, email string) *protocol.MemoryUser {
+	return s.validator.GetByEmail(email)
+}
+
+// GetUsers implements proxy.UserManager.GetUsers().
+func (s *Server) GetUsers(ctx context.Context) []*protocol.MemoryUser {
+	return s.validator.GetAll()
+}
+
+// GetUsersCount implements proxy.UserManager.GetUsersCount().
+func (s *Server) GetUsersCount(context.Context) int64 {
+	return s.validator.GetCount()
+}
+
 // Network implements proxy.Inbound.Network().
 func (s *Server) Network() []net.Network {
 	return []net.Network{net.Network_TCP, net.Network_UNIX}
@@ -132,11 +147,7 @@ func (s *Server) Network() []net.Network {
 
 // Process implements proxy.Inbound.Process().
 func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Connection, dispatcher routing.Dispatcher) error {
-	iConn := conn
-	statConn, ok := iConn.(*stat.CounterConnection)
-	if ok {
-		iConn = statConn.Connection
-	}
+	iConn := stat.TryUnwrapStatsConn(conn)
 
 	sessionPolicy := s.policyManager.ForLevel(0)
 	if err := conn.SetReadDeadline(time.Now().Add(sessionPolicy.Timeouts.Handshake)); err != nil {
@@ -218,7 +229,7 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 	sessionPolicy = s.policyManager.ForLevel(user.Level)
 
 	if destination.Network == net.Network_UDP { // handle udp request
-		return s.handleUDPPayload(ctx, &PacketReader{Reader: clientReader}, &PacketWriter{Writer: conn}, dispatcher)
+		return s.handleUDPPayload(ctx, sessionPolicy, &PacketReader{Reader: clientReader}, &PacketWriter{Writer: conn}, dispatcher)
 	}
 
 	ctx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
@@ -233,7 +244,11 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 	return s.handleConnection(ctx, sessionPolicy, destination, clientReader, buf.NewWriter(conn), dispatcher)
 }
 
-func (s *Server) handleUDPPayload(ctx context.Context, clientReader *PacketReader, clientWriter *PacketWriter, dispatcher routing.Dispatcher) error {
+func (s *Server) handleUDPPayload(ctx context.Context, sessionPolicy policy.Session, clientReader *PacketReader, clientWriter *PacketWriter, dispatcher routing.Dispatcher) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	timer := signal.CancelAfterInactivity(ctx, cancel, sessionPolicy.Timeouts.ConnectionIdle)
+	defer timer.SetTimeout(0)
 	udpServer := udp.NewDispatcher(dispatcher, func(ctx context.Context, packet *udp_proto.Packet) {
 		udpPayload := packet.Payload
 		if udpPayload.UDP == nil {
@@ -242,55 +257,67 @@ func (s *Server) handleUDPPayload(ctx context.Context, clientReader *PacketReade
 
 		if err := clientWriter.WriteMultiBuffer(buf.MultiBuffer{udpPayload}); err != nil {
 			errors.LogWarningInner(ctx, err, "failed to write response")
+			cancel()
+		} else {
+			timer.Update()
 		}
 	})
+	defer udpServer.RemoveRay()
 
 	inbound := session.InboundFromContext(ctx)
 	user := inbound.User
 
 	var dest *net.Destination
 
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			mb, err := clientReader.ReadMultiBuffer()
-			if err != nil {
-				if errors.Cause(err) != io.EOF {
-					return errors.New("unexpected EOF").Base(err)
-				}
+	requestDone := func() error {
+		for {
+			select {
+			case <-ctx.Done():
 				return nil
-			}
+			default:
+				mb, err := clientReader.ReadMultiBuffer()
+				if err != nil {
+					if errors.Cause(err) != io.EOF {
+						return errors.New("unexpected EOF").Base(err)
+					}
+					return nil
+				}
 
-			mb2, b := buf.SplitFirst(mb)
-			if b == nil {
-				continue
-			}
-			destination := *b.UDP
+				mb2, b := buf.SplitFirst(mb)
+				if b == nil {
+					continue
+				}
+				timer.Update()
+				destination := *b.UDP
 
-			currentPacketCtx := ctx
-			if inbound.Source.IsValid() {
-				currentPacketCtx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
-					From:   inbound.Source,
-					To:     destination,
-					Status: log.AccessAccepted,
-					Reason: "",
-					Email:  user.Email,
-				})
-			}
-			errors.LogInfo(ctx, "tunnelling request to ", destination)
+				currentPacketCtx := ctx
+				if inbound.Source.IsValid() {
+					currentPacketCtx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
+						From:   inbound.Source,
+						To:     destination,
+						Status: log.AccessAccepted,
+						Reason: "",
+						Email:  user.Email,
+					})
+				}
+				errors.LogInfo(ctx, "tunnelling request to ", destination)
 
-			if !s.cone || dest == nil {
-				dest = &destination
-			}
+				if !s.cone || dest == nil {
+					dest = &destination
+				}
 
-			udpServer.Dispatch(currentPacketCtx, *dest, b) // first packet
-			for _, payload := range mb2 {
-				udpServer.Dispatch(currentPacketCtx, *dest, payload)
+				udpServer.Dispatch(currentPacketCtx, *dest, b) // first packet
+				for _, payload := range mb2 {
+					udpServer.Dispatch(currentPacketCtx, *dest, payload)
+				}
 			}
 		}
 	}
+
+	if err := task.Run(ctx, requestDone); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) handleConnection(ctx context.Context, sessionPolicy policy.Session,

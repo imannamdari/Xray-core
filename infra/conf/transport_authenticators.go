@@ -3,71 +3,17 @@ package conf
 import (
 	"sort"
 
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/transport/internet/headers/dns"
-	"github.com/imannamdari/xray-core/transport/internet/headers/http"
-	"github.com/imannamdari/xray-core/transport/internet/headers/noop"
-	"github.com/imannamdari/xray-core/transport/internet/headers/srtp"
-	"github.com/imannamdari/xray-core/transport/internet/headers/tls"
-	"github.com/imannamdari/xray-core/transport/internet/headers/utp"
-	"github.com/imannamdari/xray-core/transport/internet/headers/wechat"
-	"github.com/imannamdari/xray-core/transport/internet/headers/wireguard"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/utils"
+	"github.com/xtls/xray-core/transport/internet/headers/http"
+	"github.com/xtls/xray-core/transport/internet/headers/noop"
 	"google.golang.org/protobuf/proto"
 )
-
-type NoOpAuthenticator struct{}
-
-func (NoOpAuthenticator) Build() (proto.Message, error) {
-	return new(noop.Config), nil
-}
 
 type NoOpConnectionAuthenticator struct{}
 
 func (NoOpConnectionAuthenticator) Build() (proto.Message, error) {
 	return new(noop.ConnectionConfig), nil
-}
-
-type SRTPAuthenticator struct{}
-
-func (SRTPAuthenticator) Build() (proto.Message, error) {
-	return new(srtp.Config), nil
-}
-
-type UTPAuthenticator struct{}
-
-func (UTPAuthenticator) Build() (proto.Message, error) {
-	return new(utp.Config), nil
-}
-
-type WechatVideoAuthenticator struct{}
-
-func (WechatVideoAuthenticator) Build() (proto.Message, error) {
-	return new(wechat.VideoConfig), nil
-}
-
-type WireguardAuthenticator struct{}
-
-func (WireguardAuthenticator) Build() (proto.Message, error) {
-	return new(wireguard.WireguardConfig), nil
-}
-
-type DNSAuthenticator struct {
-	Domain string `json:"domain"`
-}
-
-func (v *DNSAuthenticator) Build() (proto.Message, error) {
-	config := new(dns.Config)
-	config.Domain = "www.baidu.com"
-	if len(v.Domain) > 0 {
-		config.Domain = v.Domain
-	}
-	return config, nil
-}
-
-type DTLSAuthenticator struct{}
-
-func (DTLSAuthenticator) Build() (proto.Message, error) {
-	return new(tls.PacketConfig), nil
 }
 
 type AuthenticatorRequest struct {
@@ -95,11 +41,36 @@ func (v *AuthenticatorRequest) Build() (*http.RequestConfig, error) {
 				Value: []string{"www.baidu.com", "www.bing.com"},
 			},
 			{
-				Name: "User-Agent",
-				Value: []string{
-					"Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.143 Safari/537.36",
-					"Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/601.1 (KHTML, like Gecko) CriOS/53.0.2785.109 Mobile/14A456 Safari/601.1.46",
-				},
+				Name:  "User-Agent",
+				Value: []string{utils.ChromeUA},
+			},
+			{
+				Name:  "Sec-CH-UA",
+				Value: []string{utils.ChromeUACH},
+			},
+			{
+				Name:  "Sec-CH-UA-Mobile",
+				Value: []string{"?0"},
+			},
+			{
+				Name:  "Sec-CH-UA-Platform",
+				Value: []string{"Windows"},
+			},
+			{
+				Name:  "Sec-Fetch-Mode",
+				Value: []string{"no-cors", "cors", "same-origin"},
+			},
+			{
+				Name:  "Sec-Fetch-Dest",
+				Value: []string{"empty"},
+			},
+			{
+				Name:  "Sec-Fetch-Site",
+				Value: []string{"none"},
+			},
+			{
+				Name:  "Sec-Fetch-User",
+				Value: []string{"?1"},
 			},
 			{
 				Name:  "Accept-Encoding",
@@ -125,7 +96,7 @@ func (v *AuthenticatorRequest) Build() (*http.RequestConfig, error) {
 	}
 
 	if len(v.Path) > 0 {
-		config.Uri = append([]string(nil), (v.Path)...)
+		config.Uri = append([]string(nil), v.Path...)
 	}
 
 	if len(v.Headers) > 0 {

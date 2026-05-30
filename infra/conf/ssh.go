@@ -1,7 +1,7 @@
 package conf
 
 import (
-	"github.com/imannamdari/xray-core/app/ssh"
+	"github.com/xtls/xray-core/app/ssh"
 )
 
 type SSHConfig struct {

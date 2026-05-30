@@ -1,13 +1,12 @@
 package conf
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"strings"
 
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/proxy/wireguard"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/proxy/wireguard"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -52,7 +51,7 @@ func (c *WireGuardPeerConfig) Build() (proto.Message, error) {
 type WireGuardConfig struct {
 	IsClient bool `json:""`
 
-	KernelMode     *bool                  `json:"kernelMode"`
+	NoKernelTun    bool                   `json:"noKernelTun"`
 	SecretKey      string                 `json:"secretKey"`
 	Address        []string               `json:"address"`
 	Peers          []*WireGuardPeerConfig `json:"peers"`
@@ -68,7 +67,7 @@ func (c *WireGuardConfig) Build() (proto.Message, error) {
 	var err error
 	config.SecretKey, err = ParseWireGuardKey(c.SecretKey)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("invalid WireGuard secret key: %w", err)
 	}
 
 	if c.Address == nil {
@@ -119,17 +118,7 @@ func (c *WireGuardConfig) Build() (proto.Message, error) {
 	}
 
 	config.IsClient = c.IsClient
-	if c.KernelMode != nil {
-		config.KernelMode = *c.KernelMode
-		if config.KernelMode && !wireguard.KernelTunSupported() {
-			errors.LogWarning(context.Background(), "kernel mode is not supported on your OS or permission is insufficient")
-		}
-	} else {
-		config.KernelMode = wireguard.KernelTunSupported()
-		if config.KernelMode {
-			errors.LogDebug(context.Background(), "kernel mode is enabled as it's supported and permission is sufficient")
-		}
-	}
+	config.NoKernelTun = c.NoKernelTun
 
 	return config, nil
 }
@@ -137,7 +126,11 @@ func (c *WireGuardConfig) Build() (proto.Message, error) {
 func ParseWireGuardKey(str string) (string, error) {
 	var err error
 
-	if len(str)%2 == 0 {
+	if str == "" {
+		return "", errors.New("key must not be empty")
+	}
+
+	if len(str) == 64 {
 		_, err = hex.DecodeString(str)
 		if err == nil {
 			return str, nil

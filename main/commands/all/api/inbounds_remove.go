@@ -3,9 +3,9 @@ package api
 import (
 	"fmt"
 
-	handlerService "github.com/imannamdari/xray-core/app/proxyman/command"
-	"github.com/imannamdari/xray-core/infra/conf/serial"
-	"github.com/imannamdari/xray-core/main/commands/base"
+	handlerService "github.com/xtls/xray-core/app/proxyman/command"
+	"github.com/xtls/xray-core/infra/conf/serial"
+	"github.com/xtls/xray-core/main/commands/base"
 )
 
 var cmdRemoveInbounds = &base.Command{
@@ -14,13 +14,18 @@ var cmdRemoveInbounds = &base.Command{
 	Short:       "Remove inbounds",
 	Long: `
 Remove inbounds from Xray.
+
 Arguments:
-	-s, -server 
+
+	-s, -server <server:port>
 		The API server address. Default 127.0.0.1:8080
-	-t, -timeout
-		Timeout seconds to call API. Default 3
+
+	-t, -timeout <seconds>
+		Timeout in seconds for calling API. Default 3
+
 Example:
-    {{.Exec}} {{.LongName}} --server=127.0.0.1:8080 c1.json "tag name"
+
+	{{.Exec}} {{.LongName}} --server=127.0.0.1:8080 c1.json "tag name"
 `,
 	Run: executeRemoveInbounds,
 }

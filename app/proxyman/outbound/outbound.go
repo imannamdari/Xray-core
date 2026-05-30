@@ -1,18 +1,16 @@
 package outbound
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
-
 import (
 	"context"
 	"sort"
 	"strings"
 	"sync"
 
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/outbound"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/outbound"
 )
 
 // Manager is to manage all outbound handlers.
@@ -147,9 +145,23 @@ func (m *Manager) RemoveHandler(ctx context.Context, tag string) error {
 	return nil
 }
 
+// ListHandlers implements outbound.Manager.
+func (m *Manager) ListHandlers(ctx context.Context) []outbound.Handler {
+	m.access.RLock()
+	defer m.access.RUnlock()
+
+	response := make([]outbound.Handler, len(m.untaggedHandlers))
+	copy(response, m.untaggedHandlers)
+
+	for _, v := range m.taggedHandler {
+		response = append(response, v)
+	}
+
+	return response
+}
+
 // Select implements outbound.HandlerSelector.
 func (m *Manager) Select(selectors []string) []string {
-
 	key := strings.Join(selectors, ",")
 	if cache, ok := m.tagsCache.Load(key); ok {
 		return cache.([]string)

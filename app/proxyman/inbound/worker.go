@@ -6,24 +6,25 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	c "github.com/imannamdari/xray-core/common/ctx"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal/done"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/features/stats"
-	"github.com/imannamdari/xray-core/proxy"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tcp"
-	"github.com/imannamdari/xray-core/transport/internet/udp"
-	"github.com/imannamdari/xray-core/transport/pipe"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	c "github.com/xtls/xray-core/common/ctx"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/features/stats"
+	"github.com/xtls/xray-core/proxy"
+	hysteria_proxy "github.com/xtls/xray-core/proxy/hysteria"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/hysteria"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tcp"
+	"github.com/xtls/xray-core/transport/internet/udp"
+	"github.com/xtls/xray-core/transport/pipe"
 )
 
 type worker interface {
@@ -41,7 +42,7 @@ type tcpWorker struct {
 	recvOrigDest    bool
 	tag             string
 	dispatcher      routing.Dispatcher
-	sniffingConfig  *proxyman.SniffingConfig
+	sniffingRequest session.SniffingRequest
 	uplinkCounter   stats.Counter
 	downlinkCounter stats.Counter
 
@@ -76,7 +77,25 @@ func (w *tcpWorker) callback(conn stat.Connection) {
 		case internet.SocketConfig_TProxy:
 			dest = net.DestinationFromAddr(conn.LocalAddr())
 		}
+
 		if dest.IsValid() {
+			// Check if try to connect to this inbound itself (can cause loopback)
+			var isLoopBack bool
+			if w.address == net.AnyIP || w.address == net.AnyIPv6 {
+				if dest.Port.Value() == w.port.Value() && IsLocal(dest.Address.IP()) {
+					isLoopBack = true
+				}
+			} else {
+				if w.hub.Addr().String() == dest.NetAddr() {
+					isLoopBack = true
+				}
+			}
+			if isLoopBack {
+				cancel()
+				conn.Close()
+				errors.LogError(ctx, errors.New("loopback connection detected"))
+				return
+			}
 			outbounds[0].Target = dest
 		}
 	}
@@ -91,19 +110,14 @@ func (w *tcpWorker) callback(conn stat.Connection) {
 	}
 	ctx = session.ContextWithInbound(ctx, &session.Inbound{
 		Source:  net.DestinationFromAddr(conn.RemoteAddr()),
+		Local:   net.DestinationFromAddr(conn.LocalAddr()),
 		Gateway: net.TCPDestination(w.address, w.port),
 		Tag:     w.tag,
 		Conn:    conn,
 	})
 
 	content := new(session.Content)
-	if w.sniffingConfig != nil {
-		content.SniffingRequest.Enabled = w.sniffingConfig.Enabled
-		content.SniffingRequest.OverrideDestinationForProtocol = w.sniffingConfig.DestinationOverride
-		content.SniffingRequest.ExcludeForDomain = w.sniffingConfig.DomainsExcluded
-		content.SniffingRequest.MetadataOnly = w.sniffingConfig.MetadataOnly
-		content.SniffingRequest.RouteOnly = w.sniffingConfig.RouteOnly
-	}
+	content.SniffingRequest = w.sniffingRequest
 	ctx = session.ContextWithContent(ctx, content)
 
 	if err := w.proxy.Process(ctx, net.Network_TCP, conn, w.dispatcher); err != nil {
@@ -119,6 +133,11 @@ func (w *tcpWorker) Proxy() proxy.Inbound {
 
 func (w *tcpWorker) Start() error {
 	ctx := context.Background()
+
+	if v, ok := w.proxy.(*hysteria_proxy.Server); ok {
+		ctx = hysteria.ContextWithValidator(ctx, v.HysteriaInboundValidator())
+	}
+
 	hub, err := internet.ListenTCP(ctx, w.address, w.port, w.stream, func(conn stat.Connection) {
 		go w.callback(conn)
 	})
@@ -161,6 +180,7 @@ type udpConn struct {
 	uplink           stats.Counter
 	downlink         stats.Counter
 	inactive         bool
+	cancel           context.CancelFunc
 }
 
 func (c *udpConn) setInactive() {
@@ -203,6 +223,9 @@ func (c *udpConn) Write(buf []byte) (int, error) {
 }
 
 func (c *udpConn) Close() error {
+	if c.cancel != nil {
+		c.cancel()
+	}
 	common.Must(c.done.Close())
 	common.Must(common.Close(c.writer))
 	return nil
@@ -243,7 +266,7 @@ type udpWorker struct {
 	tag             string
 	stream          *internet.MemoryStreamConfig
 	dispatcher      routing.Dispatcher
-	sniffingConfig  *proxyman.SniffingConfig
+	sniffingRequest session.SniffingRequest
 	uplinkCounter   stats.Counter
 	downlinkCounter stats.Counter
 
@@ -259,6 +282,7 @@ func (w *udpWorker) getConnection(id connID) (*udpConn, bool) {
 	defer w.Unlock()
 
 	if conn, found := w.activeConn[id]; found && !conn.done.Done() {
+		conn.updateActivity()
 		return conn, true
 	}
 
@@ -306,7 +330,8 @@ func (w *udpWorker) callback(b *buf.Buffer, source net.Destination, originalDest
 		common.Must(w.checker.Start())
 
 		go func() {
-			ctx := w.ctx
+			ctx, cancel := context.WithCancel(w.ctx)
+			conn.cancel = cancel
 			sid := session.NewID()
 			ctx = c.ContextWithID(ctx, sid)
 
@@ -315,18 +340,23 @@ func (w *udpWorker) callback(b *buf.Buffer, source net.Destination, originalDest
 				outbounds[0].Target = originalDest
 			}
 			ctx = session.ContextWithOutbounds(ctx, outbounds)
+			local := net.DestinationFromAddr(w.hub.Addr())
+			if local.Address == net.AnyIP || local.Address == net.AnyIPv6 {
+				if source.Address.Family().IsIPv4() {
+					local.Address = net.AnyIP
+				} else if source.Address.Family().IsIPv6() {
+					local.Address = net.AnyIPv6
+				}
+			}
+
 			ctx = session.ContextWithInbound(ctx, &session.Inbound{
 				Source:  source,
+				Local:   local, // Due to some limitations, in UDP connections, localIP is always equal to listen interface IP
 				Gateway: net.UDPDestination(w.address, w.port),
 				Tag:     w.tag,
 			})
 			content := new(session.Content)
-			if w.sniffingConfig != nil {
-				content.SniffingRequest.Enabled = w.sniffingConfig.Enabled
-				content.SniffingRequest.OverrideDestinationForProtocol = w.sniffingConfig.DestinationOverride
-				content.SniffingRequest.MetadataOnly = w.sniffingConfig.MetadataOnly
-				content.SniffingRequest.RouteOnly = w.sniffingConfig.RouteOnly
-			}
+			content.SniffingRequest = w.sniffingRequest
 			ctx = session.ContextWithContent(ctx, content)
 			if err := w.proxy.Process(ctx, net.Network_UDP, conn, w.dispatcher); err != nil {
 				errors.LogInfoInner(ctx, err, "connection ends")
@@ -442,7 +472,7 @@ type dsWorker struct {
 	stream          *internet.MemoryStreamConfig
 	tag             string
 	dispatcher      routing.Dispatcher
-	sniffingConfig  *proxyman.SniffingConfig
+	sniffingRequest session.SniffingRequest
 	uplinkCounter   stats.Counter
 	downlinkCounter stats.Counter
 
@@ -465,19 +495,14 @@ func (w *dsWorker) callback(conn stat.Connection) {
 	}
 	ctx = session.ContextWithInbound(ctx, &session.Inbound{
 		Source:  net.DestinationFromAddr(conn.RemoteAddr()),
+		Local:   net.DestinationFromAddr(conn.LocalAddr()),
 		Gateway: net.UnixDestination(w.address),
 		Tag:     w.tag,
 		Conn:    conn,
 	})
 
 	content := new(session.Content)
-	if w.sniffingConfig != nil {
-		content.SniffingRequest.Enabled = w.sniffingConfig.Enabled
-		content.SniffingRequest.OverrideDestinationForProtocol = w.sniffingConfig.DestinationOverride
-		content.SniffingRequest.ExcludeForDomain = w.sniffingConfig.DomainsExcluded
-		content.SniffingRequest.MetadataOnly = w.sniffingConfig.MetadataOnly
-		content.SniffingRequest.RouteOnly = w.sniffingConfig.RouteOnly
-	}
+	content.SniffingRequest = w.sniffingRequest
 	ctx = session.ContextWithContent(ctx, content)
 
 	if err := w.proxy.Process(ctx, net.Network_UNIX, conn, w.dispatcher); err != nil {
@@ -524,4 +549,19 @@ func (w *dsWorker) Close() error {
 	}
 
 	return nil
+}
+
+func IsLocal(ip net.IP) bool {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok {
+			if ipnet.IP.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -4,14 +4,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/grpc/encoding"
-	"github.com/imannamdari/xray-core/transport/internet/reality"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
 	goreality "github.com/xtls/reality"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/grpc/encoding"
+	"github.com/xtls/xray-core/transport/internet/reality"
+	"github.com/xtls/xray-core/transport/internet/tls"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -118,6 +118,10 @@ func Listen(ctx context.Context, address net.Address, port net.Port, settings *i
 				errors.LogErrorInner(ctx, err, "failed to listen on ", address, ":", port)
 				return
 			}
+		}
+
+		if settings.TcpmaskManager != nil {
+			streamListener, _ = settings.TcpmaskManager.WrapListener(streamListener)
 		}
 
 		errors.LogDebug(ctx, "gRPC listen for service name `"+grpcSettings.getServiceName()+"` tun `"+grpcSettings.getTunStreamName()+"` multi tun `"+grpcSettings.getTunMultiStreamName()+"`")

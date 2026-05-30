@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	. "github.com/imannamdari/xray-core/common/log"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	. "github.com/xtls/xray-core/common/log"
 )
 
 func TestFileLogger(t *testing.T) {
@@ -16,6 +16,7 @@ func TestFileLogger(t *testing.T) {
 	common.Must(err)
 	path := f.Name()
 	common.Must(f.Close())
+	defer os.Remove(path)
 
 	creator, err := CreateFileLogWriter(path)
 	common.Must(err)

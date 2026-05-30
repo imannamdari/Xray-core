@@ -1,23 +1,34 @@
 package proxyman
 
-func (s *AllocationStrategy) GetConcurrencyValue() uint32 {
-	if s == nil || s.Concurrency == nil {
-		return 3
-	}
-	return s.Concurrency.Value
-}
+import (
+	"github.com/xtls/xray-core/common/geodata"
+	"github.com/xtls/xray-core/common/session"
+)
 
-func (s *AllocationStrategy) GetRefreshValue() uint32 {
-	if s == nil || s.Refresh == nil {
-		return 5
-	}
-	return s.Refresh.Value
-}
-
-func (c *ReceiverConfig) GetEffectiveSniffingSettings() *SniffingConfig {
-	if c.SniffingSettings != nil {
-		return c.SniffingSettings
+func BuildSniffingRequest(config *SniffingConfig) (session.SniffingRequest, error) {
+	if config == nil {
+		return session.SniffingRequest{}, nil
 	}
 
-	return nil
+	request := session.SniffingRequest{
+		Enabled:                        config.Enabled,
+		OverrideDestinationForProtocol: config.DestinationOverride,
+		MetadataOnly:                   config.MetadataOnly,
+		RouteOnly:                      config.RouteOnly,
+	}
+	if len(config.DomainsExcluded) > 0 {
+		excludeForDomain, err := geodata.DomainReg.BuildDomainMatcher(config.DomainsExcluded)
+		if err != nil {
+			return session.SniffingRequest{}, err
+		}
+		request.ExcludeForDomain = excludeForDomain
+	}
+	if len(config.IpsExcluded) > 0 {
+		excludeForIP, err := geodata.IPReg.BuildIPMatcher(config.IpsExcluded)
+		if err != nil {
+			return session.SniffingRequest{}, err
+		}
+		request.ExcludeForIP = excludeForIP
+	}
+	return request, nil
 }

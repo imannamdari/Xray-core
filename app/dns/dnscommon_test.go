@@ -2,14 +2,15 @@ package dns
 
 import (
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	dns_feature "github.com/imannamdari/xray-core/features/dns"
 	"github.com/miekg/dns"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	dns_feature "github.com/xtls/xray-core/features/dns"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -18,31 +19,33 @@ func Test_parseResponse(t *testing.T) {
 
 	ans := new(dns.Msg)
 	ans.Id = 0
-	p = append(p, common.Must2(ans.Pack()).([]byte))
+	p = append(p, common.Must2(ans.Pack()))
 
 	p = append(p, []byte{})
 
 	ans = new(dns.Msg)
 	ans.Id = 1
-	ans.Answer = append(ans.Answer,
-		common.Must2(dns.NewRR("google.com. IN CNAME m.test.google.com")).(dns.RR),
-		common.Must2(dns.NewRR("google.com. IN CNAME fake.google.com")).(dns.RR),
-		common.Must2(dns.NewRR("google.com. IN A 8.8.8.8")).(dns.RR),
-		common.Must2(dns.NewRR("google.com. IN A 8.8.4.4")).(dns.RR),
+	ans.Answer = append(
+		ans.Answer,
+		common.Must2(dns.NewRR("google.com. IN CNAME m.test.google.com")),
+		common.Must2(dns.NewRR("google.com. IN CNAME fake.google.com")),
+		common.Must2(dns.NewRR("google.com. IN A 8.8.8.8")),
+		common.Must2(dns.NewRR("google.com. IN A 8.8.4.4")),
 	)
-	p = append(p, common.Must2(ans.Pack()).([]byte))
+	p = append(p, common.Must2(ans.Pack()))
 
 	ans = new(dns.Msg)
 	ans.Id = 2
-	ans.Answer = append(ans.Answer,
-		common.Must2(dns.NewRR("google.com. IN CNAME m.test.google.com")).(dns.RR),
-		common.Must2(dns.NewRR("google.com. IN CNAME fake.google.com")).(dns.RR),
-		common.Must2(dns.NewRR("google.com. IN CNAME m.test.google.com")).(dns.RR),
-		common.Must2(dns.NewRR("google.com. IN CNAME test.google.com")).(dns.RR),
-		common.Must2(dns.NewRR("google.com. IN AAAA 2001::123:8888")).(dns.RR),
-		common.Must2(dns.NewRR("google.com. IN AAAA 2001::123:8844")).(dns.RR),
+	ans.Answer = append(
+		ans.Answer,
+		common.Must2(dns.NewRR("google.com. IN CNAME m.test.google.com")),
+		common.Must2(dns.NewRR("google.com. IN CNAME fake.google.com")),
+		common.Must2(dns.NewRR("google.com. IN CNAME m.test.google.com")),
+		common.Must2(dns.NewRR("google.com. IN CNAME test.google.com")),
+		common.Must2(dns.NewRR("google.com. IN AAAA 2001:4860:4860::8888")),
+		common.Must2(dns.NewRR("google.com. IN AAAA 2001:4860:4860::8844")),
 	)
-	p = append(p, common.Must2(ans.Pack()).([]byte))
+	p = append(p, common.Must2(ans.Pack()))
 
 	tests := []struct {
 		name    string
@@ -51,7 +54,7 @@ func Test_parseResponse(t *testing.T) {
 	}{
 		{
 			"empty",
-			&IPRecord{0, []net.Address(nil), time.Time{}, dnsmessage.RCodeSuccess},
+			&IPRecord{0, []net.IP(nil), time.Time{}, dnsmessage.RCodeSuccess, nil},
 			false,
 		},
 		{
@@ -63,15 +66,16 @@ func Test_parseResponse(t *testing.T) {
 			"a record",
 			&IPRecord{
 				1,
-				[]net.Address{net.ParseAddress("8.8.8.8"), net.ParseAddress("8.8.4.4")},
+				[]net.IP{net.ParseIP("8.8.8.8"), net.ParseIP("8.8.4.4")},
 				time.Time{},
 				dnsmessage.RCodeSuccess,
+				nil,
 			},
 			false,
 		},
 		{
 			"aaaa record",
-			&IPRecord{2, []net.Address{net.ParseAddress("2001::123:8888"), net.ParseAddress("2001::123:8844")}, time.Time{}, dnsmessage.RCodeSuccess},
+			&IPRecord{2, []net.IP{net.ParseIP("2001:4860:4860::8888"), net.ParseIP("2001:4860:4860::8844")}, time.Time{}, dnsmessage.RCodeSuccess, nil},
 			false,
 		},
 	}
@@ -84,11 +88,12 @@ func Test_parseResponse(t *testing.T) {
 			}
 
 			if got != nil {
-				// reset the time
+				// reset the time and RawHeader
 				got.Expire = time.Time{}
+				got.RawHeader = nil
 			}
 			if cmp.Diff(got, tt.want) != "" {
-				t.Errorf(cmp.Diff(got, tt.want))
+				t.Error(cmp.Diff(got, tt.want))
 				// t.Errorf("handleResponse() = %#v, want %#v", got, tt.want)
 			}
 		})
@@ -129,10 +134,15 @@ func Test_buildReqMsgs(t *testing.T) {
 			IPv6Enable: false,
 			FakeEnable: false,
 		}, nil}, 0},
+		{"name too long", args{strings.Repeat("a", 256), dns_feature.IPOption{
+			IPv4Enable: true,
+			IPv6Enable: true,
+			FakeEnable: false,
+		}, nil}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := buildReqMsgs(tt.args.domain, tt.args.option, stubID, tt.args.reqOpts); !(len(got) == tt.want) {
+			if got, _ := buildReqMsgs(tt.args.domain, tt.args.option, stubID, tt.args.reqOpts); !(len(got) == tt.want) {
 				t.Errorf("buildReqMsgs() = %v, want %v", got, tt.want)
 			}
 		})
@@ -154,7 +164,7 @@ func Test_genEDNS0Options(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := genEDNS0Options(tt.args.clientIP); got == nil {
+			if got := genEDNS0Options(tt.args.clientIP, 0); got == nil {
 				t.Errorf("genEDNS0Options() = %v, want %v", got, tt.want)
 			}
 		})

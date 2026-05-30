@@ -3,9 +3,11 @@ package vmess
 import (
 	"strings"
 
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/uuid"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/uuid"
 )
 
 // MemoryAccount is an in-memory form of VMess account.
@@ -26,6 +28,21 @@ func (a *MemoryAccount) Equals(account protocol.Account) bool {
 		return false
 	}
 	return a.ID.Equals(vmessAccount.ID)
+}
+
+func (a *MemoryAccount) ToProto() proto.Message {
+	test := ""
+	if a.AuthenticatedLengthExperiment {
+		test = "AuthenticatedLength|"
+	}
+	if a.NoTerminationSignal {
+		test = test + "NoTerminationSignal"
+	}
+	return &Account{
+		Id:               a.ID.String(),
+		TestsEnabled:     test,
+		SecuritySettings: &protocol.SecurityConfig{Type: a.Security},
+	}
 }
 
 // AsAccount implements protocol.Account.

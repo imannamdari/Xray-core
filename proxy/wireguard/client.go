@@ -27,21 +27,21 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/dice"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/dns"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/transport"
-	"github.com/imannamdari/xray-core/transport/internet"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/dice"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/dns"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/internet"
 )
 
 // Handler is an outbound connection that silently swallow the entire payload.
@@ -77,6 +77,20 @@ func New(ctx context.Context, conf *DeviceConfig) (*Handler, error) {
 	}, nil
 }
 
+func (h *Handler) Close() (err error) {
+	go func() {
+		h.wgLock.Lock()
+		defer h.wgLock.Unlock()
+
+		if h.net != nil {
+			_ = h.net.Close()
+			h.net = nil
+		}
+	}()
+
+	return nil
+}
+
 func (h *Handler) processWireGuard(ctx context.Context, dialer internet.Dialer) (err error) {
 	h.wgLock.Lock()
 	defer h.wgLock.Unlock()
@@ -107,7 +121,8 @@ func (h *Handler) processWireGuard(ctx context.Context, dialer internet.Dialer) 
 				IPv4Enable: h.hasIPv4,
 				IPv6Enable: h.hasIPv6,
 			},
-			workers: int(h.conf.NumWorkers),
+			workers:   int(h.conf.NumWorkers),
+			readQueue: make(chan *netReadInfo),
 		},
 		ctx:      ctx,
 		dialer:   dialer,
@@ -115,7 +130,8 @@ func (h *Handler) processWireGuard(ctx context.Context, dialer internet.Dialer) 
 	}
 	defer func() {
 		if err != nil {
-			_ = h.bind.Close()
+			h.bind.Close()
+			h.bind = nil
 		}
 	}()
 
@@ -150,13 +166,13 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	// resolve dns
 	addr := destination.Address
 	if addr.Family().IsDomain() {
-		ips, err := h.dns.LookupIP(addr.Domain(), dns.IPOption{
+		ips, _, err := h.dns.LookupIP(addr.Domain(), dns.IPOption{
 			IPv4Enable: h.hasIPv4 && h.conf.preferIP4(),
 			IPv6Enable: h.hasIPv6 && h.conf.preferIP6(),
 		})
 		{ // Resolve fallback
 			if (len(ips) == 0 || err != nil) && h.conf.hasFallback() {
-				ips, err = h.dns.LookupIP(addr.Domain(), dns.IPOption{
+				ips, _, err = h.dns.LookupIP(addr.Domain(), dns.IPOption{
 					IPv4Enable: h.hasIPv4 && h.conf.fallbackIP4(),
 					IPv6Enable: h.hasIPv6 && h.conf.fallbackIP6(),
 				})
@@ -169,6 +185,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		}
 		addr = net.IPAddress(ips[dice.Roll(len(ips))])
 	}
+	destination.Address = addr
 
 	var newCtx context.Context
 	var newCancel context.CancelFunc
@@ -211,6 +228,11 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 			return errors.New("failed to create UDP connection").Base(err)
 		}
 		defer conn.Close()
+
+		conn = &udpConnClient{
+			Conn: conn,
+			dest: destination,
+		}
 
 		requestFunc = func() error {
 			defer timer.SetTimeout(p.Timeouts.DownlinkOnly)
@@ -284,15 +306,15 @@ func (h *Handler) createIPCRequest() string {
 				addr = net.ParseAddress(dialerIp.String())
 				errors.LogInfo(h.bind.ctx, "createIPCRequest use dialer dest ip: ", addr)
 			} else {
-				ips, err := h.dns.LookupIP(addr.Domain(), dns.IPOption{
-					IPv4Enable: h.hasIPv4 && h.conf.preferIP4(),
-					IPv6Enable: h.hasIPv6 && h.conf.preferIP6(),
+				ips, _, err := h.dns.LookupIP(addr.Domain(), dns.IPOption{
+					IPv4Enable: h.conf.preferIP4(),
+					IPv6Enable: h.conf.preferIP6(),
 				})
 				{ // Resolve fallback
 					if (len(ips) == 0 || err != nil) && h.conf.hasFallback() {
-						ips, err = h.dns.LookupIP(addr.Domain(), dns.IPOption{
-							IPv4Enable: h.hasIPv4 && h.conf.fallbackIP4(),
-							IPv6Enable: h.hasIPv6 && h.conf.fallbackIP6(),
+						ips, _, err = h.dns.LookupIP(addr.Domain(), dns.IPOption{
+							IPv4Enable: h.conf.fallbackIP4(),
+							IPv6Enable: h.conf.fallbackIP6(),
 						})
 					}
 				}
@@ -320,4 +342,47 @@ func (h *Handler) createIPCRequest() string {
 	}
 
 	return request.String()[:request.Len()]
+}
+
+type udpConnClient struct {
+	net.Conn
+	dest net.Destination
+}
+
+func (c *udpConnClient) ReadMultiBuffer() (buf.MultiBuffer, error) {
+	b := buf.New()
+	b.Resize(0, buf.Size)
+	n, addr, err := c.Conn.(net.PacketConn).ReadFrom(b.Bytes())
+	if err != nil {
+		b.Release()
+		return nil, err
+	}
+	if addr == nil { // should never hit
+		addr = c.dest.RawNetAddr()
+	}
+	b.Resize(0, int32(n))
+
+	b.UDP = &net.Destination{
+		Address: net.IPAddress(addr.(*net.UDPAddr).IP),
+		Port:    net.Port(addr.(*net.UDPAddr).Port),
+		Network: net.Network_UDP,
+	}
+
+	return buf.MultiBuffer{b}, nil
+}
+
+func (c *udpConnClient) WriteMultiBuffer(mb buf.MultiBuffer) error {
+	for i, b := range mb {
+		dst := c.dest
+		if b.UDP != nil {
+			dst = *b.UDP
+		}
+		_, err := c.Conn.(net.PacketConn).WriteTo(b.Bytes(), dst.RawNetAddr())
+		if err != nil {
+			buf.ReleaseMulti(mb[i:])
+			return err
+		}
+		b.Release()
+	}
+	return nil
 }

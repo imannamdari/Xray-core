@@ -4,9 +4,10 @@ import (
 	"context"
 	_ "unsafe"
 
-	"github.com/imannamdari/xray-core/common/ctx"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/features/routing"
+	"github.com/xtls/xray-core/common/ctx"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/features/outbound"
+	"github.com/xtls/xray-core/features/routing"
 )
 
 //go:linkname IndependentCancelCtx context.newCancelCtx
@@ -16,13 +17,15 @@ const (
 	inboundSessionKey         ctx.SessionKey = 1
 	outboundSessionKey        ctx.SessionKey = 2
 	contentSessionKey         ctx.SessionKey = 3
-	muxPreferredSessionKey    ctx.SessionKey = 4
-	sockoptSessionKey         ctx.SessionKey = 5
-	trackedConnectionErrorKey ctx.SessionKey = 6
-	dispatcherKey             ctx.SessionKey = 7
-	timeoutOnlyKey            ctx.SessionKey = 8
-	allowedNetworkKey         ctx.SessionKey = 9
-	handlerSessionKey         ctx.SessionKey = 10
+	isReverseMuxKey           ctx.SessionKey = 4  // is reverse mux
+	sockoptSessionKey         ctx.SessionKey = 5  // used by dokodemo to only receive sockopt.Mark
+	trackedConnectionErrorKey ctx.SessionKey = 6  // used by observer to get outbound error
+	dispatcherKey             ctx.SessionKey = 7  // used by ss2022 inbounds to get dispatcher
+	timeoutOnlyKey            ctx.SessionKey = 8  // mux context's child contexts to only cancel when its own traffic times out
+	allowedNetworkKey         ctx.SessionKey = 9  // muxcool server control incoming request tcp/udp
+	fullHandlerKey            ctx.SessionKey = 10 // outbound gets full handler
+	mitmAlpn11Key             ctx.SessionKey = 11 // used by TLS dialer
+	mitmServerNameKey         ctx.SessionKey = 12 // used by TLS dialer
 )
 
 func ContextWithInbound(ctx context.Context, inbound *Inbound) context.Context {
@@ -40,20 +43,18 @@ func ContextWithOutbounds(ctx context.Context, outbounds []*Outbound) context.Co
 	return context.WithValue(ctx, outboundSessionKey, outbounds)
 }
 
-func ContextCloneOutbounds(ctx context.Context) context.Context {
-	outbounds := OutboundsFromContext(ctx)
-	newOutbounds := make([]*Outbound, len(outbounds))
-	for i, ob := range outbounds {
-		if ob == nil {
-			continue
+func SubContextFromMuxInbound(ctx context.Context) context.Context {
+	newOutbounds := []*Outbound{{}}
+
+	content := ContentFromContext(ctx)
+	newContent := Content{}
+	if content != nil {
+		newContent = *content
+		if content.Attributes != nil {
+			panic("content.Attributes != nil")
 		}
-
-		// copy outbound by value
-		v := *ob
-		newOutbounds[i] = &v
 	}
-
-	return ContextWithOutbounds(ctx, newOutbounds)
+	return ContextWithContent(ContextWithOutbounds(ctx, newOutbounds), &newContent)
 }
 
 func OutboundsFromContext(ctx context.Context) []*Outbound {
@@ -74,25 +75,21 @@ func ContentFromContext(ctx context.Context) *Content {
 	return nil
 }
 
-// ContextWithMuxPreferred returns a new context with the given bool
-func ContextWithMuxPreferred(ctx context.Context, forced bool) context.Context {
-	return context.WithValue(ctx, muxPreferredSessionKey, forced)
+func ContextWithIsReverseMux(ctx context.Context, isReverseMux bool) context.Context {
+	return context.WithValue(ctx, isReverseMuxKey, isReverseMux)
 }
 
-// MuxPreferredFromContext returns value in this context, or false if not contained.
-func MuxPreferredFromContext(ctx context.Context) bool {
-	if val, ok := ctx.Value(muxPreferredSessionKey).(bool); ok {
+func IsReverseMuxFromContext(ctx context.Context) bool {
+	if val, ok := ctx.Value(isReverseMuxKey).(bool); ok {
 		return val
 	}
 	return false
 }
 
-// ContextWithSockopt returns a new context with Socket configs included
 func ContextWithSockopt(ctx context.Context, s *Sockopt) context.Context {
 	return context.WithValue(ctx, sockoptSessionKey, s)
 }
 
-// SockoptFromContext returns Socket configs in this context, or nil if not contained.
 func SockoptFromContext(ctx context.Context) *Sockopt {
 	if sockopt, ok := ctx.Value(sockoptSessionKey).(*Sockopt); ok {
 		return sockopt
@@ -161,4 +158,37 @@ func AllowedNetworkFromContext(ctx context.Context) net.Network {
 		return val
 	}
 	return net.Network_Unknown
+}
+
+func ContextWithFullHandler(ctx context.Context, handler outbound.Handler) context.Context {
+	return context.WithValue(ctx, fullHandlerKey, handler)
+}
+
+func FullHandlerFromContext(ctx context.Context) outbound.Handler {
+	if val, ok := ctx.Value(fullHandlerKey).(outbound.Handler); ok {
+		return val
+	}
+	return nil
+}
+
+func ContextWithMitmAlpn11(ctx context.Context, alpn11 bool) context.Context {
+	return context.WithValue(ctx, mitmAlpn11Key, alpn11)
+}
+
+func MitmAlpn11FromContext(ctx context.Context) bool {
+	if val, ok := ctx.Value(mitmAlpn11Key).(bool); ok {
+		return val
+	}
+	return false
+}
+
+func ContextWithMitmServerName(ctx context.Context, serverName string) context.Context {
+	return context.WithValue(ctx, mitmServerNameKey, serverName)
+}
+
+func MitmServerNameFromContext(ctx context.Context) string {
+	if val, ok := ctx.Value(mitmServerNameKey).(string); ok {
+		return val
+	}
+	return ""
 }

@@ -2,53 +2,18 @@ package conf_test
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 	_ "unsafe"
 
-	"github.com/imannamdari/xray-core/app/router"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/platform"
-	"github.com/imannamdari/xray-core/common/platform/filesystem"
-	"github.com/imannamdari/xray-core/common/serial"
-	. "github.com/imannamdari/xray-core/infra/conf"
+	"github.com/xtls/xray-core/app/router"
+	"github.com/xtls/xray-core/common/geodata"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
+	. "github.com/xtls/xray-core/infra/conf"
+
 	"google.golang.org/protobuf/proto"
 )
-
-func init() {
-	wd, err := os.Getwd()
-	common.Must(err)
-
-	if _, err := os.Stat(platform.GetAssetLocation("geoip.dat")); err != nil && os.IsNotExist(err) {
-		common.Must(filesystem.CopyFile(platform.GetAssetLocation("geoip.dat"), filepath.Join(wd, "..", "..", "resources", "geoip.dat")))
-	}
-
-	os.Setenv("xray.location.asset", wd)
-}
-
-func TestToCidrList(t *testing.T) {
-	t.Log(os.Getenv("xray.location.asset"))
-
-	common.Must(filesystem.CopyFile(platform.GetAssetLocation("geoiptestrouter.dat"), "geoip.dat"))
-
-	ips := StringList([]string{
-		"geoip:us",
-		"geoip:cn",
-		"geoip:!cn",
-		"ext:geoiptestrouter.dat:!cn",
-		"ext:geoiptestrouter.dat:ca",
-		"ext-ip:geoiptestrouter.dat:!cn",
-		"ext-ip:geoiptestrouter.dat:!ca",
-	})
-
-	_, err := ToCidrList(ips)
-	if err != nil {
-		t.Fatalf("Failed to parse geoip list, got %s", err)
-	}
-}
 
 func TestRouterConfig(t *testing.T) {
 	createParser := func() func(string) (proto.Message, error) {
@@ -67,7 +32,6 @@ func TestRouterConfig(t *testing.T) {
 				"domainStrategy": "AsIs",
 				"rules": [
 					{
-						"type": "field",
 						"domain": [
 							"baidu.com",
 							"qq.com"
@@ -75,18 +39,15 @@ func TestRouterConfig(t *testing.T) {
 						"outboundTag": "direct"
 					},
 					{
-						"type": "field",
 						"ip": [
 							"10.0.0.0/8",
 							"::1/128"
 						],
 						"outboundTag": "test"
 					},{
-						"type": "field",
 						"port": "53, 443, 1000-2000",
 						"outboundTag": "test"
 					},{
-						"type": "field",
 						"port": 123,
 						"outboundTag": "test"
 					}
@@ -162,31 +123,27 @@ func TestRouterConfig(t *testing.T) {
 				},
 				Rule: []*router.RoutingRule{
 					{
-						Domain: []*router.Domain{
-							{
-								Type:  router.Domain_Plain,
-								Value: "baidu.com",
-							},
-							{
-								Type:  router.Domain_Plain,
-								Value: "qq.com",
-							},
+						Domain: []*geodata.DomainRule{
+							{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Substr, Value: "baidu.com"}}},
+							{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Substr, Value: "qq.com"}}},
 						},
 						TargetTag: &router.RoutingRule_Tag{
 							Tag: "direct",
 						},
 					},
 					{
-						Geoip: []*router.GeoIP{
+						Ip: []*geodata.IPRule{
 							{
-								Cidr: []*router.CIDR{
-									{
-										Ip:     []byte{10, 0, 0, 0},
-										Prefix: 8,
+								Value: &geodata.IPRule_Custom{
+									Custom: &geodata.CIDRRule{
+										Cidr: &geodata.CIDR{Ip: []byte{10, 0, 0, 0}, Prefix: 8},
 									},
-									{
-										Ip:     []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-										Prefix: 128,
+								},
+							},
+							{
+								Value: &geodata.IPRule_Custom{
+									Custom: &geodata.CIDRRule{
+										Cidr: &geodata.CIDR{Ip: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Prefix: 128},
 									},
 								},
 							},
@@ -225,7 +182,6 @@ func TestRouterConfig(t *testing.T) {
 				"domainStrategy": "IPIfNonMatch",
 				"rules": [
 					{
-						"type": "field",
 						"domain": [
 							"baidu.com",
 							"qq.com"
@@ -233,7 +189,6 @@ func TestRouterConfig(t *testing.T) {
 						"outboundTag": "direct"
 					},
 					{
-						"type": "field",
 						"ip": [
 							"10.0.0.0/8",
 							"::1/128"
@@ -247,31 +202,27 @@ func TestRouterConfig(t *testing.T) {
 				DomainStrategy: router.Config_IpIfNonMatch,
 				Rule: []*router.RoutingRule{
 					{
-						Domain: []*router.Domain{
-							{
-								Type:  router.Domain_Plain,
-								Value: "baidu.com",
-							},
-							{
-								Type:  router.Domain_Plain,
-								Value: "qq.com",
-							},
+						Domain: []*geodata.DomainRule{
+							{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Substr, Value: "baidu.com"}}},
+							{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Substr, Value: "qq.com"}}},
 						},
 						TargetTag: &router.RoutingRule_Tag{
 							Tag: "direct",
 						},
 					},
 					{
-						Geoip: []*router.GeoIP{
+						Ip: []*geodata.IPRule{
 							{
-								Cidr: []*router.CIDR{
-									{
-										Ip:     []byte{10, 0, 0, 0},
-										Prefix: 8,
+								Value: &geodata.IPRule_Custom{
+									Custom: &geodata.CIDRRule{
+										Cidr: &geodata.CIDR{Ip: []byte{10, 0, 0, 0}, Prefix: 8},
 									},
-									{
-										Ip:     []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-										Prefix: 128,
+								},
+							},
+							{
+								Value: &geodata.IPRule_Custom{
+									Custom: &geodata.CIDRRule{
+										Cidr: &geodata.CIDR{Ip: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Prefix: 128},
 									},
 								},
 							},

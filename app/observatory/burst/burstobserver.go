@@ -2,16 +2,16 @@ package burst
 
 import (
 	"context"
-
 	"sync"
 
-	"github.com/imannamdari/xray-core/app/observatory"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/signal/done"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/extension"
-	"github.com/imannamdari/xray-core/features/outbound"
+	"github.com/xtls/xray-core/app/observatory"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/extension"
+	"github.com/xtls/xray-core/features/outbound"
+	"github.com/xtls/xray-core/features/routing"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -29,6 +29,10 @@ type Observer struct {
 
 func (o *Observer) GetObservation(ctx context.Context) (proto.Message, error) {
 	return &observatory.ObservationResult{Status: o.createResult()}, nil
+}
+
+func (o *Observer) Check(tag []string) {
+	o.hp.Check(tag)
 }
 
 func (o *Observer) createResult() []*observatory.OutboundStatus {
@@ -67,7 +71,6 @@ func (o *Observer) Start() error {
 		o.hp.StartScheduler(func() ([]string, error) {
 			hs, ok := o.ohm.(outbound.HandlerSelector)
 			if !ok {
-
 				return nil, errors.New("outbound.Manager is not a HandlerSelector")
 			}
 
@@ -88,13 +91,15 @@ func (o *Observer) Close() error {
 
 func New(ctx context.Context, config *Config) (*Observer, error) {
 	var outboundManager outbound.Manager
-	err := core.RequireFeatures(ctx, func(om outbound.Manager) {
+	var dispatcher routing.Dispatcher
+	err := core.RequireFeatures(ctx, func(om outbound.Manager, rd routing.Dispatcher) {
 		outboundManager = om
+		dispatcher = rd
 	})
 	if err != nil {
 		return nil, errors.New("Cannot get depended features").Base(err)
 	}
-	hp := NewHealthPing(ctx, config.PingConfig)
+	hp := NewHealthPing(ctx, dispatcher, config.PingConfig)
 	return &Observer{
 		config: config,
 		ctx:    ctx,

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xray.app.policy;
 option csharp_namespace = "Xray.App.Policy";
-option go_package = "github.com/imannamdari/xray-core/app/policy";
+option go_package = "github.com/xtls/xray-core/app/policy";
 option java_package = "com.xray.app.policy";
 option java_multiple_files = true;
 
@@ -22,6 +22,7 @@ message Policy {
   message Stats {
     bool user_uplink = 1;
     bool user_downlink = 2;
+    bool user_online = 3;
   }
 
   message Buffer {

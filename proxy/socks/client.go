@@ -4,45 +4,41 @@ import (
 	"context"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/retry"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/transport"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/retry"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/stat"
 )
 
 // Client is a Socks5 client.
 type Client struct {
-	serverPicker  protocol.ServerPicker
+	server        *protocol.ServerSpec
 	policyManager policy.Manager
 }
 
 // NewClient create a new Socks5 client based on the given config.
 func NewClient(ctx context.Context, config *ClientConfig) (*Client, error) {
-	serverList := protocol.NewServerList()
-	for _, rec := range config.Server {
-		s, err := protocol.NewServerSpecFromPB(rec)
-		if err != nil {
-			return nil, errors.New("failed to get server spec").Base(err)
-		}
-		serverList.AddServer(s)
+	if config.Server == nil {
+		return nil, errors.New(`no target server found`)
 	}
-	if serverList.Size() == 0 {
-		return nil, errors.New("0 target server")
+	server, err := protocol.NewServerSpecFromPB(config.Server)
+	if err != nil {
+		return nil, errors.New("failed to get server spec").Base(err)
 	}
 
 	v := core.MustFromContext(ctx)
 	c := &Client{
-		serverPicker:  protocol.NewRoundRobinServerPicker(serverList),
+		server:        server,
 		policyManager: v.GetFeature(policy.ManagerType()).(policy.Manager),
 	}
 
@@ -62,15 +58,12 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 	destination := ob.Target
 
 	// Outbound server.
-	var server *protocol.ServerSpec
-	// Outbound server's destination.
-	var dest net.Destination
+	server := c.server
+	dest := server.Destination
 	// Connection to the outbound server.
 	var conn stat.Connection
 
 	if err := retry.ExponentialBackoff(5, 100).On(func() error {
-		server = c.serverPicker.PickServer()
-		dest = server.Destination()
 		rawConn, err := dialer.Dial(ctx, dest)
 		if err != nil {
 			return err
@@ -101,7 +94,7 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 		request.Command = protocol.RequestCommandUDP
 	}
 
-	user := server.PickUser()
+	user := server.User
 	if user != nil {
 		request.User = user
 		p = c.policyManager.ForLevel(user.Level)
@@ -146,6 +139,7 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 			return buf.Copy(link.Reader, buf.NewWriter(conn), buf.UpdateActivity(timer))
 		}
 		responseFunc = func() error {
+			ob.CanSpliceCopy = 1
 			defer timer.SetTimeout(p.Timeouts.UplinkOnly)
 			return buf.Copy(buf.NewReader(conn), link.Writer, buf.UpdateActivity(timer))
 		}
@@ -161,6 +155,7 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 			return buf.Copy(link.Reader, writer, buf.UpdateActivity(timer))
 		}
 		responseFunc = func() error {
+			ob.CanSpliceCopy = 1
 			defer timer.SetTimeout(p.Timeouts.UplinkOnly)
 			reader := &UDPReader{Reader: udpConn}
 			return buf.Copy(reader, link.Writer, buf.UpdateActivity(timer))

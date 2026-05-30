@@ -1,5 +1,8 @@
+# UPDATE
+The project is now DEPRECATED, since the [xray project](https://github.com/xtls/xray-core) added support for ech. However, current project still pass ech traffic over ssh tunnel which does not implemented in [xray project](https://github.com/xtls/xray-core).
+
 # XRAY with ECH support
-This is an experimental project that adds ECH support to [xray project](https://github.com/XTLS/Xray-core).
+This is an experimental project that adds ECH support to [xray project](https://github.com/xtls/xray-core).
 
 If your domain is behind a CDN and has been censored, you can use this project to bypass it.
 Currently this project only supports Cloudflare CDN.
@@ -23,7 +26,7 @@ And then copy this `go` directory to your `/usr/local/go`
 
 After installing cloudflare golang, you can build this project. Somthing like below scripts:
 ```bash
-git clone https://github.com/imannamdari/Xray-core.git && cd Xray-core
+git clone https://github.com/xtls/xray-core.git && cd Xray-core
 go build -o v2ray ./main/main.go
 ```
 

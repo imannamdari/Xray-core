@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	creflect "github.com/imannamdari/xray-core/common/reflect"
-	cserial "github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/main/commands/base"
-	"github.com/imannamdari/xray-core/main/confloader"
+	creflect "github.com/xtls/xray-core/common/reflect"
+	cserial "github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/main/commands/base"
+	"github.com/xtls/xray-core/main/confloader"
 )
 
 var cmdJson = &base.Command{
@@ -38,7 +38,6 @@ Examples:
 }
 
 func executeTypedMessageToJson(cmd *base.Command, args []string) {
-
 	var injectTypeInfo bool
 	cmd.Flag.BoolVar(&injectTypeInfo, "t", false, "")
 	cmd.Flag.BoolVar(&injectTypeInfo, "type", false, "")
@@ -50,17 +49,17 @@ func executeTypedMessageToJson(cmd *base.Command, args []string) {
 
 	reader, err := confloader.LoadConfig(cmd.Flag.Arg(0))
 	if err != nil {
-		base.Fatalf(err.Error())
+		base.Fatalf("failed to load config: %s", err)
 	}
 
 	b, err := io.ReadAll(reader)
 	if err != nil {
-		base.Fatalf(err.Error())
+		base.Fatalf("failed to read config: %s", err)
 	}
 
 	tm := cserial.TypedMessage{}
 	if err = json.Unmarshal(b, &tm); err != nil {
-		base.Fatalf(err.Error())
+		base.Fatalf("failed to unmarshal config: %s", err)
 	}
 
 	if j, ok := creflect.MarshalToJson(&tm, injectTypeInfo); ok {

@@ -2,20 +2,21 @@ package grpc
 
 import (
 	"context"
-	gonet "net"
+	"reflect"
 	"sync"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	c "github.com/imannamdari/xray-core/common/ctx"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/grpc/encoding"
-	"github.com/imannamdari/xray-core/transport/internet/reality"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
+	"github.com/xtls/xray-core/common"
+	c "github.com/xtls/xray-core/common/ctx"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/utils"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/grpc/encoding"
+	"github.com/xtls/xray-core/transport/internet/reality"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/connectivity"
@@ -99,7 +100,7 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 			},
 			MinConnectTimeout: 5 * time.Second,
 		}),
-		grpc.WithContextDialer(func(gctx context.Context, s string) (gonet.Conn, error) {
+		grpc.WithContextDialer(func(gctx context.Context, s string) (net.Conn, error) {
 			select {
 			case <-gctx.Done():
 				return nil, gctx.Err()
@@ -125,6 +126,15 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 
 			c, err := internet.DialSystem(gctx, net.TCPDestination(address, port), sockopt)
 			if err == nil {
+				if streamSettings.TcpmaskManager != nil {
+					newConn, err := streamSettings.TcpmaskManager.WrapConnClient(c)
+					if err != nil {
+						c.Close()
+						return nil, errors.New("mask err").Base(err)
+					}
+					c = newConn
+				}
+
 				if tlsConfig != nil {
 					config := tlsConfig.GetTLSConfig()
 					if config.ServerName == "" && address.Family().IsDomain() {
@@ -168,10 +178,6 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 		dialOptions = append(dialOptions, grpc.WithInitialWindowSize(grpcSettings.InitialWindowsSize))
 	}
 
-	if grpcSettings.UserAgent != "" {
-		dialOptions = append(dialOptions, grpc.WithUserAgent(grpcSettings.UserAgent))
-	}
-
 	var grpcDestHost string
 	if dest.Address.Family().IsDomain() {
 		grpcDestHost = dest.Address.Domain()
@@ -179,10 +185,34 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 		grpcDestHost = dest.Address.IP().String()
 	}
 
-	conn, err := grpc.Dial(
-		gonet.JoinHostPort(grpcDestHost, dest.Port.String()),
+	conn, err := grpc.NewClient(
+		"passthrough:///"+net.JoinHostPort(grpcDestHost, dest.Port.String()),
 		dialOptions...,
 	)
+	if err == nil {
+		userAgent := grpcSettings.UserAgent
+		// It's NOT recommended to set the UA of gRPC connections to that of real browsers, as they are fundamentally incapable of initiating real gRPC connections.
+		switch userAgent {
+		case "chrome", "":
+			userAgent = utils.ChromeUA
+		case "firefox":
+			userAgent = utils.FirefoxUA
+		case "edge":
+			userAgent = utils.MSEdgeUA
+		case "golang":
+			userAgent = ""
+		}
+		setUserAgent(conn, userAgent)
+		conn.Connect()
+	}
 	globalDialerMap[dialerConf{dest, streamSettings}] = conn
 	return conn, err
+}
+
+// setUserAgent overrides the user-agent on a ClientConn to remove the
+// "grpc-go/version" suffix that grpc.WithUserAgent unconditionally appends.
+func setUserAgent(conn *grpc.ClientConn, ua string) {
+	if f := reflect.ValueOf(conn).Elem().FieldByName("dopts").FieldByName("copts").FieldByName("UserAgent"); f.IsValid() {
+		*(*string)(f.Addr().UnsafePointer()) = ua
+	}
 }

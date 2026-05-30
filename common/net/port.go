@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"strconv"
 
-	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/errors"
 )
 
 // Port represents a network port in TCP and UDP protocol.
@@ -85,6 +85,16 @@ func PortListFromProto(l *PortList) MemoryPortList {
 		mpl = append(mpl, MemoryPortRange{From: Port(r.From), To: Port(r.To)})
 	}
 	return mpl
+}
+
+func (l *PortList) Ports() []uint32 {
+	var ports []uint32
+	for _, r := range l.Range {
+		for i := uint32(r.From); i <= uint32(r.To); i++ {
+			ports = append(ports, i)
+		}
+	}
+	return ports
 }
 
 func (mpl MemoryPortList) Contains(port Port) bool {

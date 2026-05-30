@@ -3,8 +3,8 @@ package command
 import (
 	"strings"
 
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/features/routing"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/features/routing"
 )
 
 // routingContext is an wrapper of protobuf RoutingContext as implementation of routing.Context and routing.Route.
@@ -26,6 +26,18 @@ func (c routingContext) GetTargetIPs() []net.IP {
 
 func (c routingContext) GetTargetPort() net.Port {
 	return net.Port(c.RoutingContext.GetTargetPort())
+}
+
+func (c routingContext) GetLocalIPs() []net.IP {
+	return mapBytesToIPs(c.RoutingContext.GetLocalIPs())
+}
+
+func (c routingContext) GetLocalPort() net.Port {
+	return net.Port(c.RoutingContext.GetLocalPort())
+}
+
+func (c routingContext) GetVlessRoute() net.Port {
+	return net.Port(c.RoutingContext.GetVlessRoute())
 }
 
 func (c routingContext) GetRuleTag() string {
@@ -54,8 +66,10 @@ var fieldMap = map[string]func(*RoutingContext, routing.Route){
 	"network":        func(s *RoutingContext, r routing.Route) { s.Network = r.GetNetwork() },
 	"ip_source":      func(s *RoutingContext, r routing.Route) { s.SourceIPs = mapIPsToBytes(r.GetSourceIPs()) },
 	"ip_target":      func(s *RoutingContext, r routing.Route) { s.TargetIPs = mapIPsToBytes(r.GetTargetIPs()) },
+	"ip_local":       func(s *RoutingContext, r routing.Route) { s.LocalIPs = mapIPsToBytes(r.GetLocalIPs()) },
 	"port_source":    func(s *RoutingContext, r routing.Route) { s.SourcePort = uint32(r.GetSourcePort()) },
 	"port_target":    func(s *RoutingContext, r routing.Route) { s.TargetPort = uint32(r.GetTargetPort()) },
+	"port_local":     func(s *RoutingContext, r routing.Route) { s.LocalPort = uint32(r.GetLocalPort()) },
 	"domain":         func(s *RoutingContext, r routing.Route) { s.TargetDomain = r.GetTargetDomain() },
 	"protocol":       func(s *RoutingContext, r routing.Route) { s.Protocol = r.GetProtocol() },
 	"user":           func(s *RoutingContext, r routing.Route) { s.User = r.GetUser() },

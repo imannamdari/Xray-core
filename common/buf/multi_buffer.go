@@ -3,9 +3,9 @@ package buf
 import (
 	"io"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/serial"
 )
 
 // ReadAllToBytes reads all content from the reader into a byte array, until EOF.
@@ -38,8 +38,8 @@ func MergeMulti(dest MultiBuffer, src MultiBuffer) (MultiBuffer, MultiBuffer) {
 // MergeBytes merges the given bytes into MultiBuffer and return the new address of the merged MultiBuffer.
 func MergeBytes(dest MultiBuffer, src []byte) MultiBuffer {
 	n := len(dest)
-	if n > 0 && !(dest)[n-1].IsFull() {
-		nBytes, _ := (dest)[n-1].Write(src)
+	if n > 0 && !dest[n-1].IsFull() {
+		nBytes, _ := dest[n-1].Write(src)
 		src = src[nBytes:]
 	}
 
@@ -144,7 +144,7 @@ func Compact(mb MultiBuffer) MultiBuffer {
 
 	for i := 1; i < len(mb); i++ {
 		curr := mb[i]
-		if last.Len()+curr.Len() > Size {
+		if curr.Len() > last.Available() {
 			mb2 = append(mb2, last)
 			last = curr
 		} else {

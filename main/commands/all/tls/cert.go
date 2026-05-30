@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/protocol/tls/cert"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/main/commands/base"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/protocol/tls/cert"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/main/commands/base"
 )
 
 // cmdCert is the tls cert command
@@ -120,9 +120,9 @@ func writeFile(content []byte, name string) error {
 func printFile(certificate *cert.Certificate, name string) error {
 	certPEM, keyPEM := certificate.ToPEM()
 	return task.Run(context.Background(), func() error {
-		return writeFile(certPEM, name+"_cert.pem")
+		return writeFile(certPEM, name+".crt")
 	}, func() error {
-		return writeFile(keyPEM, name+"_key.pem")
+		return writeFile(keyPEM, name+".key")
 	})
 }
 

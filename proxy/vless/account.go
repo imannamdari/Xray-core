@@ -1,9 +1,11 @@
 package vless
 
 import (
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/uuid"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/uuid"
 )
 
 // AsAccount implements protocol.Account.AsAccount().
@@ -16,6 +18,12 @@ func (a *Account) AsAccount() (protocol.Account, error) {
 		ID:         protocol.NewID(id),
 		Flow:       a.Flow,       // needs parser here?
 		Encryption: a.Encryption, // needs parser here?
+		XorMode:    a.XorMode,
+		Seconds:    a.Seconds,
+		Padding:    a.Padding,
+		Reverse:    a.Reverse,
+		Testpre:    a.Testpre,
+		Testseed:   a.Testseed,
 	}, nil
 }
 
@@ -25,8 +33,16 @@ type MemoryAccount struct {
 	ID *protocol.ID
 	// Flow of the account. May be "xtls-rprx-vision".
 	Flow string
-	// Encryption of the account. Used for client connections, and only accepts "none" for now.
+
 	Encryption string
+	XorMode    uint32
+	Seconds    uint32
+	Padding    string
+
+	Reverse *Reverse
+
+	Testpre  uint32
+	Testseed []uint32
 }
 
 // Equals implements protocol.Account.Equals().
@@ -36,4 +52,18 @@ func (a *MemoryAccount) Equals(account protocol.Account) bool {
 		return false
 	}
 	return a.ID.Equals(vlessAccount.ID)
+}
+
+func (a *MemoryAccount) ToProto() proto.Message {
+	return &Account{
+		Id:         a.ID.String(),
+		Flow:       a.Flow,
+		Encryption: a.Encryption,
+		XorMode:    a.XorMode,
+		Seconds:    a.Seconds,
+		Padding:    a.Padding,
+		Reverse:    a.Reverse,
+		Testpre:    a.Testpre,
+		Testseed:   a.Testseed,
+	}
 }

@@ -2,25 +2,26 @@ package socks
 
 import (
 	"context"
+	goerrors "errors"
 	"io"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	udp_proto "github.com/imannamdari/xray-core/common/protocol/udp"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/proxy/http"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/udp"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	udp_proto "github.com/xtls/xray-core/common/protocol/udp"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/proxy"
+	"github.com/xtls/xray-core/proxy/http"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/udp"
 )
 
 // Server is a SOCKS 5 proxy server
@@ -28,7 +29,6 @@ type Server struct {
 	config        *ServerConfig
 	policyManager policy.Manager
 	cone          bool
-	udpFilter     *UDPFilter
 	httpServer    *http.Server
 }
 
@@ -45,7 +45,6 @@ func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
 	}
 	if config.AuthType == AuthType_PASSWORD {
 		httpConfig.Accounts = config.Accounts
-		s.udpFilter = new(UDPFilter) // We only use this when auth is enabled
 	}
 	s.httpServer, _ = http.NewServer(ctx, httpConfig)
 	return s, nil
@@ -59,11 +58,7 @@ func (s *Server) policy() policy.Session {
 
 // Network implements proxy.Inbound.
 func (s *Server) Network() []net.Network {
-	list := []net.Network{net.Network_TCP}
-	if s.config.UdpEnabled {
-		list = append(list, net.Network_UDP)
-	}
-	return list
+	return []net.Network{net.Network_TCP}
 }
 
 // Process implements proxy.Inbound.
@@ -74,18 +69,25 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 	inbound.User = &protocol.MemoryUser{
 		Level: s.config.UserLevel,
 	}
+	if !proxy.IsRAWTransportWithoutSecurity(conn) {
+		inbound.CanSpliceCopy = 3
+	}
 
 	switch network {
 	case net.Network_TCP:
 		firstbyte := make([]byte, 1)
-		conn.Read(firstbyte)
+		if n, err := conn.Read(firstbyte); n == 0 {
+			if goerrors.Is(err, io.EOF) {
+				errors.LogInfo(ctx, "Connection closed immediately, likely health check connection")
+				return nil
+			}
+			return errors.New("failed to read from connection").Base(err)
+		}
 		if firstbyte[0] != 5 && firstbyte[0] != 4 { // Check if it is Socks5/4/4a
 			errors.LogDebug(ctx, "Not Socks request, try to parse as HTTP request")
 			return s.httpServer.ProcessWithFirstbyte(ctx, network, conn, dispatcher, firstbyte...)
 		}
 		return s.processTCP(ctx, conn, dispatcher, firstbyte)
-	case net.Network_UDP:
-		return s.handleUDPPayload(ctx, conn, dispatcher)
 	default:
 		return errors.New("unknown network: ", network)
 	}
@@ -116,7 +118,8 @@ func (s *Server) processTCP(ctx context.Context, conn stat.Connection, dispatche
 		Reader: buf.NewReader(conn),
 		Buffer: buf.MultiBuffer{buf.FromBytes(firstbyte)},
 	}
-	request, err := svrSession.Handshake(reader, conn)
+	request, tempUDPConn, err := svrSession.Handshake(reader, conn)
+	defer common.CloseIfExists(tempUDPConn)
 	if err != nil {
 		if inbound.Source.IsValid() {
 			log.Record(&log.AccessMessage{
@@ -147,82 +150,47 @@ func (s *Server) processTCP(ctx context.Context, conn stat.Connection, dispatche
 				Reason: "",
 			})
 		}
-
-		return s.transport(ctx, reader, conn, dest, dispatcher, inbound)
+		if inbound.CanSpliceCopy == 2 {
+			inbound.CanSpliceCopy = 1
+		}
+		if err := dispatcher.DispatchLink(
+			ctx, dest, &transport.Link{
+				Reader: reader,
+				Writer: buf.NewWriter(conn),
+			},
+		); err != nil {
+			return errors.New("failed to dispatch request").Base(err)
+		}
+		return nil
 	}
 
 	if request.Command == protocol.RequestCommandUDP {
-		if s.udpFilter != nil {
-			s.udpFilter.Add(conn.RemoteAddr())
+		if tempUDPConn == nil {
+			return errors.New("UDP associate with listen port failed")
 		}
-		return s.handleUDP(conn)
+		tempUDPConn.SetTimeout(plcy.Timeouts.ConnectionIdle)
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- s.handleUDPPayload(ctx, tempUDPConn, dispatcher)
+		}()
+		// Associated TCP keeps the UDP alive
+		// Close UDP if TCP connection is closed
+		// Or Close TCP if UDP is idle timeout
+		io.Copy(buf.DiscardBytes, conn)
+		tempUDPConn.Close()
+		return <-errCh
 	}
-
-	return nil
-}
-
-func (*Server) handleUDP(c io.Reader) error {
-	// The TCP connection closes after this method returns. We need to wait until
-	// the client closes it.
-	return common.Error2(io.Copy(buf.DiscardBytes, c))
-}
-
-func (s *Server) transport(ctx context.Context, reader io.Reader, writer io.Writer, dest net.Destination, dispatcher routing.Dispatcher, inbound *session.Inbound) error {
-	ctx, cancel := context.WithCancel(ctx)
-	timer := signal.CancelAfterInactivity(ctx, cancel, s.policy().Timeouts.ConnectionIdle)
-
-	if inbound != nil {
-		inbound.Timer = timer
-	}
-
-	plcy := s.policy()
-	ctx = policy.ContextWithBufferPolicy(ctx, plcy.Buffer)
-	link, err := dispatcher.Dispatch(ctx, dest)
-	if err != nil {
-		return err
-	}
-
-	requestDone := func() error {
-		defer timer.SetTimeout(plcy.Timeouts.DownlinkOnly)
-		if err := buf.Copy(buf.NewReader(reader), link.Writer, buf.UpdateActivity(timer)); err != nil {
-			return errors.New("failed to transport all TCP request").Base(err)
-		}
-
-		return nil
-	}
-
-	responseDone := func() error {
-		defer timer.SetTimeout(plcy.Timeouts.UplinkOnly)
-
-		v2writer := buf.NewWriter(writer)
-		if err := buf.Copy(link.Reader, v2writer, buf.UpdateActivity(timer)); err != nil {
-			return errors.New("failed to transport all TCP response").Base(err)
-		}
-
-		return nil
-	}
-
-	requestDonePost := task.OnSuccess(requestDone, task.Close(link.Writer))
-	if err := task.Run(ctx, requestDonePost, responseDone); err != nil {
-		common.Interrupt(link.Reader)
-		common.Interrupt(link.Writer)
-		return errors.New("connection ends").Base(err)
-	}
-
 	return nil
 }
 
 func (s *Server) handleUDPPayload(ctx context.Context, conn stat.Connection, dispatcher routing.Dispatcher) error {
-	if s.udpFilter != nil && !s.udpFilter.Check(conn.RemoteAddr()) {
-		errors.LogDebug(ctx, "Unauthorized UDP access from ", conn.RemoteAddr().String())
-		return nil
-	}
 	udpServer := udp.NewDispatcher(dispatcher, func(ctx context.Context, packet *udp_proto.Packet) {
 		payload := packet.Payload
 		errors.LogDebug(ctx, "writing back UDP response with ", payload.Len(), " bytes")
 
 		request := protocol.RequestHeaderFromContext(ctx)
 		if request == nil {
+			payload.Release()
 			return
 		}
 
@@ -237,13 +205,15 @@ func (s *Server) handleUDPPayload(ctx context.Context, conn stat.Connection, dis
 		udpMessage, err := EncodeUDPPacket(request, payload.Bytes())
 		payload.Release()
 
-		defer udpMessage.Release()
 		if err != nil {
 			errors.LogWarningInner(ctx, err, "failed to write UDP response")
+			return
 		}
 
 		conn.Write(udpMessage.Bytes())
+		udpMessage.Release()
 	})
+	defer udpServer.RemoveRay()
 
 	inbound := session.InboundFromContext(ctx)
 	if inbound != nil && inbound.Source.IsValid() {

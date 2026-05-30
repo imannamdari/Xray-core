@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xray.proxy.socks;
 option csharp_namespace = "Xray.Proxy.Socks";
-option go_package = "github.com/imannamdari/xray-core/proxy/socks";
+option go_package = "github.com/xtls/xray-core/proxy/socks";
 option java_package = "com.xray.proxy.socks";
 option java_multiple_files = true;
 
@@ -35,5 +35,5 @@ message ServerConfig {
 // ClientConfig is the protobuf config for Socks client.
 message ClientConfig {
   // Sever is a list of Socks server addresses.
-  repeated xray.common.protocol.ServerEndpoint server = 1;
+  xray.common.protocol.ServerEndpoint server = 1;
 }

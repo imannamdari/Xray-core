@@ -4,24 +4,27 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	. "github.com/imannamdari/xray-core/app/dns"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/features/dns"
+	. "github.com/xtls/xray-core/app/dns"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/geodata"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/features/dns"
 )
 
 func TestStaticHosts(t *testing.T) {
 	pb := []*Config_HostMapping{
 		{
-			Type:   DomainMatchingType_Full,
-			Domain: "example.com",
+			Domain:        &geodata.DomainRule{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Domain, Value: "lan"}}},
+			ProxiedDomain: "#3",
+		},
+		{
+			Domain: &geodata.DomainRule{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Full, Value: "example.com"}}},
 			Ip: [][]byte{
 				{1, 1, 1, 1},
 			},
 		},
 		{
-			Type:   DomainMatchingType_Full,
-			Domain: "proxy.xray.com",
+			Domain: &geodata.DomainRule{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Full, Value: "proxy.xray.com"}}},
 			Ip: [][]byte{
 				{1, 2, 3, 4},
 				{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
@@ -29,20 +32,17 @@ func TestStaticHosts(t *testing.T) {
 			ProxiedDomain: "another-proxy.xray.com",
 		},
 		{
-			Type:          DomainMatchingType_Full,
-			Domain:        "proxy2.xray.com",
+			Domain:        &geodata.DomainRule{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Full, Value: "proxy2.xray.com"}}},
 			ProxiedDomain: "proxy.xray.com",
 		},
 		{
-			Type:   DomainMatchingType_Subdomain,
-			Domain: "example.cn",
+			Domain: &geodata.DomainRule{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Domain, Value: "example.cn"}}},
 			Ip: [][]byte{
 				{2, 2, 2, 2},
 			},
 		},
 		{
-			Type:   DomainMatchingType_Subdomain,
-			Domain: "baidu.com",
+			Domain: &geodata.DomainRule{Value: &geodata.DomainRule_Custom{Custom: &geodata.Domain{Type: geodata.Domain_Domain, Value: "baidu.com"}}},
 			Ip: [][]byte{
 				{127, 0, 0, 1},
 				{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
@@ -54,7 +54,14 @@ func TestStaticHosts(t *testing.T) {
 	common.Must(err)
 
 	{
-		ips := hosts.Lookup("example.com", dns.IPOption{
+		_, err := hosts.Lookup("example.com.lan", dns.IPOption{})
+		if dns.RCodeFromError(err) != 3 {
+			t.Error(err)
+		}
+	}
+
+	{
+		ips, _ := hosts.Lookup("example.com", dns.IPOption{
 			IPv4Enable: true,
 			IPv6Enable: true,
 		})
@@ -67,7 +74,7 @@ func TestStaticHosts(t *testing.T) {
 	}
 
 	{
-		domain := hosts.Lookup("proxy.xray.com", dns.IPOption{
+		domain, _ := hosts.Lookup("proxy.xray.com", dns.IPOption{
 			IPv4Enable: true,
 			IPv6Enable: false,
 		})
@@ -80,7 +87,7 @@ func TestStaticHosts(t *testing.T) {
 	}
 
 	{
-		domain := hosts.Lookup("proxy2.xray.com", dns.IPOption{
+		domain, _ := hosts.Lookup("proxy2.xray.com", dns.IPOption{
 			IPv4Enable: true,
 			IPv6Enable: false,
 		})
@@ -93,7 +100,7 @@ func TestStaticHosts(t *testing.T) {
 	}
 
 	{
-		ips := hosts.Lookup("www.example.cn", dns.IPOption{
+		ips, _ := hosts.Lookup("www.example.cn", dns.IPOption{
 			IPv4Enable: true,
 			IPv6Enable: true,
 		})
@@ -106,7 +113,7 @@ func TestStaticHosts(t *testing.T) {
 	}
 
 	{
-		ips := hosts.Lookup("baidu.com", dns.IPOption{
+		ips, _ := hosts.Lookup("baidu.com", dns.IPOption{
 			IPv4Enable: false,
 			IPv6Enable: true,
 		})

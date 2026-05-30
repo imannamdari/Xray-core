@@ -1,16 +1,14 @@
 package command
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
-
 import (
 	"context"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/features/stats"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/features/stats"
 	"google.golang.org/grpc"
 )
 
@@ -60,11 +58,25 @@ func (s *routingServer) AddRule(ctx context.Context, request *AddRuleRequest) (*
 		return &AddRuleResponse{}, bo.AddRule(request.Config, request.ShouldAppend)
 	}
 	return nil, errors.New("unsupported router implementation")
-
 }
+
 func (s *routingServer) RemoveRule(ctx context.Context, request *RemoveRuleRequest) (*RemoveRuleResponse, error) {
 	if bo, ok := s.router.(routing.Router); ok {
 		return &RemoveRuleResponse{}, bo.RemoveRule(request.RuleTag)
+	}
+	return nil, errors.New("unsupported router implementation")
+}
+
+func (s *routingServer) ListRule(ctx context.Context, request *ListRuleRequest) (*ListRuleResponse, error) {
+	if bo, ok := s.router.(routing.Router); ok {
+		response := &ListRuleResponse{}
+		for _, v := range bo.ListRule() {
+			response.Rules = append(response.Rules, &ListRuleItem{
+				Tag:     v.GetOutboundTag(),
+				RuleTag: v.GetRuleTag(),
+			})
+		}
+		return response, nil
 	}
 	return nil, errors.New("unsupported router implementation")
 }
@@ -137,7 +149,7 @@ func (s *service) Register(server *grpc.Server) {
 		vCoreDesc := RoutingService_ServiceDesc
 		vCoreDesc.ServiceName = "v2ray.core.app.router.command.RoutingService"
 		server.RegisterService(&vCoreDesc, rs)
-	}))
+	}, false))
 }
 
 func init() {

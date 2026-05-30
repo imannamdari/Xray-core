@@ -2,9 +2,11 @@ syntax = "proto3";
 
 package xray.transport.internet.tls;
 option csharp_namespace = "Xray.Transport.Internet.Tls";
-option go_package = "github.com/imannamdari/xray-core/transport/internet/tls";
+option go_package = "github.com/xtls/xray-core/transport/internet/tls";
 option java_package = "com.xray.transport.internet.tls";
 option java_multiple_files = true;
+
+import "transport/internet/config.proto";
 
 message Certificate {
   // TLS certificate in x509 format.
@@ -36,7 +38,6 @@ message Certificate {
 }
 
 message Config {
-  // Whether or not to allow self-signed certificates.
   bool allow_insecure = 1;
 
   // List of certificates to be served on server.
@@ -68,29 +69,22 @@ message Config {
   string fingerprint = 11;
 
   bool reject_unknown_sni = 12;
-  
-  /* @Document A pinned certificate chain sha256 hash.
-     @Document If the server's hash does not match this value, the connection will be aborted.
-     @Document This value replace allow_insecure.
-     @Critical
-  */
-  repeated bytes pinned_peer_certificate_chain_sha256 = 13;
-
-  /* @Document A pinned certificate public key sha256 hash.
-     @Document If the server's public key hash does not match this value, the connection will be aborted.
-     @Document This value replace allow_insecure.
-     @Critical
-  */
-  repeated bytes pinned_peer_certificate_public_key_sha256 = 14;
 
   string master_key_log = 15;
 
-  // Enable this if you want tls client hello encryption.
-  bool enable_ech = 16;
-  ECHSetting ech_setting = 17;
-}
+  // Lists of string as CurvePreferences values.
+  repeated string curve_preferences = 16;
 
-message ECHSetting {
-  string dns_addr = 1;
-  string init_ech_key = 2;
+  repeated string verify_peer_cert_by_name = 17;
+
+  bytes ech_server_keys = 18;
+
+  string ech_config_list = 19;
+
+  // Deprecated
+  string ech_force_query = 20;
+
+  SocketConfig ech_socket_settings = 21;
+
+  repeated bytes pinned_peer_cert_sha256 = 22;
 }

@@ -1,4 +1,4 @@
-package uuid // import "github.com/imannamdari/xray-core/common/uuid"
+package uuid // import "github.com/xtls/xray-core/common/uuid"
 
 import (
 	"bytes"
@@ -6,8 +6,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
 )
 
 var byteGroups = []int{8, 4, 4, 4, 12}
@@ -85,8 +85,12 @@ func ParseString(str string) (UUID, error) {
 	b := uuid.Bytes()
 
 	for _, byteGroup := range byteGroups {
-		if text[0] == '-' {
+		if len(text) > 0 && text[0] == '-' {
 			text = text[1:]
+		}
+
+		if len(text) < byteGroup {
+			return uuid, errors.New("invalid UUID: ", str)
 		}
 
 		if _, err := hex.Decode(b[:byteGroup/2], text[:byteGroup]); err != nil {

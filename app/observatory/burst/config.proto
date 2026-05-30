@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xray.core.app.observatory.burst;
 option csharp_namespace = "Xray.App.Observatory.Burst";
-option go_package = "github.com/imannamdari/xray-core/app/observatory/burst";
+option go_package = "github.com/xtls/xray-core/app/observatory/burst";
 option java_package = "com.xray.app.observatory.burst";
 option java_multiple_files = true;
 
@@ -26,4 +26,7 @@ message HealthPingConfig {
   int32 samplingCount = 4;
   // ping timeout, int64 values of time.Duration
   int64 timeout = 5;
+  // http method to make request
+  string httpMethod = 6;
+
 }
