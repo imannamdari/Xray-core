@@ -9,9 +9,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	. "github.com/imannamdari/xray-core/transport/pipe"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	. "github.com/xtls/xray-core/transport/pipe"
 )
 
 func TestPipeReadWrite(t *testing.T) {
@@ -129,12 +129,12 @@ func TestPipeWriteMultiThread(t *testing.T) {
 }
 
 func TestInterfaces(t *testing.T) {
-	_ = (buf.Reader)(new(Reader))
-	_ = (buf.TimeoutReader)(new(Reader))
+	_ = buf.Reader(new(Reader))
+	_ = buf.TimeoutReader(new(Reader))
 
-	_ = (common.Interruptible)(new(Reader))
-	_ = (common.Interruptible)(new(Writer))
-	_ = (common.Closable)(new(Writer))
+	_ = common.Interruptible(new(Reader))
+	_ = common.Interruptible(new(Writer))
+	_ = common.Closable(new(Writer))
 }
 
 func BenchmarkPipeReadWrite(b *testing.B) {

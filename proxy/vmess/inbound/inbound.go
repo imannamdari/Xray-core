@@ -1,7 +1,5 @@
 package inbound
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
-
 import (
 	"context"
 	"io"
@@ -9,23 +7,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/common/uuid"
-	"github.com/imannamdari/xray-core/core"
-	feature_inbound "github.com/imannamdari/xray-core/features/inbound"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/proxy/vmess"
-	"github.com/imannamdari/xray-core/proxy/vmess/encoding"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/common/uuid"
+	"github.com/xtls/xray-core/core"
+	feature_inbound "github.com/xtls/xray-core/features/inbound"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/proxy/vmess"
+	"github.com/xtls/xray-core/proxy/vmess/encoding"
+	"github.com/xtls/xray-core/transport/internet/stat"
 )
 
 type userByEmail struct {
@@ -58,7 +56,7 @@ func (v *userByEmail) Add(u *protocol.MemoryUser) bool {
 	return v.addNoLock(u)
 }
 
-func (v *userByEmail) Get(email string) (*protocol.MemoryUser, bool) {
+func (v *userByEmail) GetOrGenerate(email string) (*protocol.MemoryUser, bool) {
 	email = strings.ToLower(email)
 
 	v.Lock()
@@ -82,6 +80,13 @@ func (v *userByEmail) Get(email string) (*protocol.MemoryUser, bool) {
 	return user, found
 }
 
+func (v *userByEmail) Get(email string) *protocol.MemoryUser {
+	email = strings.ToLower(email)
+	v.Lock()
+	defer v.Unlock()
+	return v.cache[email]
+}
+
 func (v *userByEmail) Remove(email string) bool {
 	email = strings.ToLower(email)
 
@@ -101,7 +106,6 @@ type Handler struct {
 	inboundHandlerManager feature_inbound.Manager
 	clients               *vmess.TimedUserValidator
 	usersByEmail          *userByEmail
-	detours               *DetourConfig
 	sessionHistory        *encoding.SessionHistory
 }
 
@@ -112,7 +116,6 @@ func New(ctx context.Context, config *Config) (*Handler, error) {
 		policyManager:         v.GetFeature(policy.ManagerType()).(policy.Manager),
 		inboundHandlerManager: v.GetFeature(feature_inbound.ManagerType()).(feature_inbound.Manager),
 		clients:               vmess.NewTimedUserValidator(),
-		detours:               config.Detour,
 		usersByEmail:          newUserByEmail(config.GetDefaultValue()),
 		sessionHistory:        encoding.NewSessionHistory(),
 	}
@@ -135,7 +138,8 @@ func New(ctx context.Context, config *Config) (*Handler, error) {
 func (h *Handler) Close() error {
 	return errors.Combine(
 		h.sessionHistory.Close(),
-		common.Close(h.usersByEmail))
+		common.Close(h.usersByEmail),
+	)
 }
 
 // Network implements proxy.Inbound.Network().
@@ -143,12 +147,24 @@ func (*Handler) Network() []net.Network {
 	return []net.Network{net.Network_TCP, net.Network_UNIX}
 }
 
-func (h *Handler) GetUser(email string) *protocol.MemoryUser {
-	user, existing := h.usersByEmail.Get(email)
+func (h *Handler) GetOrGenerateUser(email string) *protocol.MemoryUser {
+	user, existing := h.usersByEmail.GetOrGenerate(email)
 	if !existing {
 		h.clients.Add(user)
 	}
 	return user
+}
+
+func (h *Handler) GetUser(ctx context.Context, email string) *protocol.MemoryUser {
+	return h.usersByEmail.Get(email)
+}
+
+func (h *Handler) GetUsers(ctx context.Context) []*protocol.MemoryUser {
+	return h.clients.GetUsers()
+}
+
+func (h *Handler) GetUsersCount(context.Context) int64 {
+	return h.clients.GetCount()
 }
 
 func (h *Handler) AddUser(ctx context.Context, user *protocol.MemoryUser) error {
@@ -214,10 +230,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 		return errors.New("unable to set read deadline").Base(err).AtWarning()
 	}
 
-	iConn := connection
-	if statConn, ok := iConn.(*stat.CounterConnection); ok {
-		iConn = statConn.Connection
-	}
+	iConn := stat.TryUnwrapStatsConn(connection)
 	_, isDrain := iConn.(*net.TCPConn)
 	if !isDrain {
 		_, isDrain = iConn.(*net.UnixConn)
@@ -306,38 +319,8 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 	return nil
 }
 
+// Stub command generator
 func (h *Handler) generateCommand(ctx context.Context, request *protocol.RequestHeader) protocol.ResponseCommand {
-	if h.detours != nil {
-		tag := h.detours.To
-		if h.inboundHandlerManager != nil {
-			handler, err := h.inboundHandlerManager.GetHandler(ctx, tag)
-			if err != nil {
-				errors.LogWarningInner(ctx, err, "failed to get detour handler: ", tag)
-				return nil
-			}
-			proxyHandler, port, availableMin := handler.GetRandomInboundProxy()
-			inboundHandler, ok := proxyHandler.(*Handler)
-			if ok && inboundHandler != nil {
-				if availableMin > 255 {
-					availableMin = 255
-				}
-
-				errors.LogDebug(ctx, "pick detour handler for port ", port, " for ", availableMin, " minutes.")
-				user := inboundHandler.GetUser(request.User.Email)
-				if user == nil {
-					return nil
-				}
-				account := user.Account.(*vmess.MemoryAccount)
-				return &protocol.CommandSwitchAccount{
-					Port:     port,
-					ID:       account.ID.UUID(),
-					Level:    user.Level,
-					ValidMin: byte(availableMin),
-				}
-			}
-		}
-	}
-
 	return nil
 }
 

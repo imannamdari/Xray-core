@@ -8,15 +8,15 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/app/dispatcher"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/serial"
-	core "github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
-	"github.com/imannamdari/xray-core/testing/servers/udp"
+	"github.com/xtls/xray-core/app/dispatcher"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/proxy/freedom"
+	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/testing/servers/udp"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -52,7 +52,9 @@ func TestXrayDial(t *testing.T) {
 		},
 		Outbound: []*core.OutboundHandlerConfig{
 			{
-				ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
+				ProxySettings: serial.ToTypedMessage(&freedom.Config{
+					FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
+				}),
 			},
 		},
 	}
@@ -102,7 +104,9 @@ func TestXrayDialUDPConn(t *testing.T) {
 		},
 		Outbound: []*core.OutboundHandlerConfig{
 			{
-				ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
+				ProxySettings: serial.ToTypedMessage(&freedom.Config{
+					FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
+				}),
 			},
 		},
 	}
@@ -169,7 +173,9 @@ func TestXrayDialUDP(t *testing.T) {
 		},
 		Outbound: []*core.OutboundHandlerConfig{
 			{
-				ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
+				ProxySettings: serial.ToTypedMessage(&freedom.Config{
+					FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
+				}),
 			},
 		},
 	}

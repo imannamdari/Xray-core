@@ -3,11 +3,10 @@ package websocket
 import (
 	"net/http"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/transport/internet"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/utils"
+	"github.com/xtls/xray-core/transport/internet"
 )
-
-const protocolName = "websocket"
 
 func (c *Config) GetNormalizedPath() string {
 	path := c.Path
@@ -25,7 +24,7 @@ func (c *Config) GetRequestHeader() http.Header {
 	for k, v := range c.Header {
 		header.Add(k, v)
 	}
-	header.Set("Host", c.Host)
+	utils.TryDefaultHeadersWith(header, "ws")
 	return header
 }
 

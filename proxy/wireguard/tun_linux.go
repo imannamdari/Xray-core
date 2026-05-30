@@ -4,22 +4,26 @@ package wireguard
 
 import (
 	"context"
-	"errors"
+	goerrors "errors"
 	"fmt"
 	"net"
 	"net/netip"
 	"os"
+	"sync"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 
-	"github.com/sagernet/sing/common/control"
 	"github.com/vishvananda/netlink"
-	wgtun "golang.zx2c4.com/wireguard/tun"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/transport/internet"
+	"golang.zx2c4.com/wireguard/tun"
 )
 
 type deviceNet struct {
 	tunnel
-	dialer net.Dialer
+	dialer *net.Dialer
+	lc     *net.ListenConfig
 
 	handle    *netlink.Handle
 	linkAddrs []netlink.Addr
@@ -27,11 +31,41 @@ type deviceNet struct {
 	rules     []*netlink.Rule
 }
 
+var (
+	tableIndex int = 10230
+	mu         sync.Mutex
+)
+
+func allocateIPv6TableIndex() int {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if tableIndex > 10230 {
+		errors.LogInfo(context.Background(), "allocate new ipv6 table index: ", tableIndex)
+	}
+	currentIndex := tableIndex
+	tableIndex++
+	return currentIndex
+}
+
 func newDeviceNet(interfaceName string) *deviceNet {
-	var dialer net.Dialer
-	bindControl := control.BindToInterface(control.NewDefaultInterfaceFinder(), interfaceName, -1)
-	dialer.Control = control.Append(dialer.Control, bindControl)
-	return &deviceNet{dialer: dialer}
+	dialer := &net.Dialer{}
+	dialer.Control = func(network, address string, c syscall.RawConn) error {
+		return c.Control(func(fd uintptr) {
+			if err := syscall.BindToDevice(int(fd), interfaceName); err != nil {
+				errors.LogInfoInner(context.Background(), err, "failed to bind to device")
+			}
+		})
+	}
+	lc := &net.ListenConfig{}
+	lc.Control = func(network, address string, c syscall.RawConn) error {
+		return c.Control(func(fd uintptr) {
+			if err := syscall.BindToDevice(int(fd), interfaceName); err != nil {
+				errors.LogInfoInner(context.Background(), err, "failed to bind to device")
+			}
+		})
+	}
+	return &deviceNet{dialer: dialer, lc: lc}
 }
 
 func (d *deviceNet) DialContextTCPAddrPort(ctx context.Context, addr netip.AddrPort) (
@@ -41,9 +75,23 @@ func (d *deviceNet) DialContextTCPAddrPort(ctx context.Context, addr netip.AddrP
 }
 
 func (d *deviceNet) DialUDPAddrPort(laddr, raddr netip.AddrPort) (net.Conn, error) {
-	dialer := d.dialer
-	dialer.LocalAddr = &net.UDPAddr{IP: laddr.Addr().AsSlice(), Port: int(laddr.Port())}
-	return dialer.DialContext(context.Background(), "udp", raddr.String())
+	var conn net.PacketConn
+	var err error
+	if raddr.Addr().Is4() {
+		conn, err = d.lc.ListenPacket(context.Background(), "udp", "0.0.0.0:0")
+	} else {
+		conn, err = d.lc.ListenPacket(context.Background(), "udp", "[::]:0")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &internet.PacketConnWrapper{
+		PacketConn: conn,
+		Dest: &net.UDPAddr{
+			IP:   raddr.Addr().AsSlice(),
+			Port: int(raddr.Port()),
+		},
+	}, nil
 }
 
 func (d *deviceNet) Close() (err error) {
@@ -68,7 +116,7 @@ func (d *deviceNet) Close() (err error) {
 	if len(errs) == 0 {
 		return nil
 	}
-	return errors.Join(errs...)
+	return goerrors.Join(errs...)
 }
 
 func createKernelTun(localAddresses []netip.Addr, mtu int, handler promiscuousModeHandler) (t Tunnel, err error) {
@@ -115,7 +163,7 @@ func createKernelTun(localAddresses []netip.Addr, mtu int, handler promiscuousMo
 	}
 
 	n := CalculateInterfaceName("wg")
-	wgt, err := wgtun.CreateTUN(n, mtu)
+	wgt, err := tun.CreateTUN(n, mtu)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +186,7 @@ func createKernelTun(localAddresses []netip.Addr, mtu int, handler promiscuousMo
 		}
 	}
 
-	ipv6TableIndex := 1023
+	ipv6TableIndex := allocateIPv6TableIndex()
 	if v6 != nil {
 		r := &netlink.Route{Table: ipv6TableIndex}
 		for {
@@ -231,10 +279,15 @@ func createKernelTun(localAddresses []netip.Addr, mtu int, handler promiscuousMo
 	return out, nil
 }
 
-func KernelTunSupported() bool {
-	// run a superuser permission check to check
-	// if the current user has the sufficient permission
-	// to create a tun device.
+func KernelTunSupported() (bool, error) {
+	var hdr unix.CapUserHeader
+	hdr.Version = unix.LINUX_CAPABILITY_VERSION_3
+	hdr.Pid = 0 // 0 means current process
 
-	return unix.Geteuid() == 0 // 0 means root
+	var data unix.CapUserData
+	if err := unix.Capget(&hdr, &data); err != nil {
+		return false, fmt.Errorf("failed to get capabilities: %v", err)
+	}
+
+	return (data.Effective & (1 << unix.CAP_NET_ADMIN)) != 0, nil
 }

@@ -4,13 +4,13 @@ import (
 	"context"
 	"io"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/cmdarg"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/infra/conf"
-	"github.com/imannamdari/xray-core/infra/conf/serial"
-	"github.com/imannamdari/xray-core/main/confloader"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/cmdarg"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/infra/conf"
+	"github.com/xtls/xray-core/infra/conf/serial"
+	"github.com/xtls/xray-core/main/confloader"
 )
 
 func init() {
@@ -41,6 +41,13 @@ func init() {
 				}
 				return cf.Build()
 			case io.Reader:
+				if serial.UseStrictJSON {
+					cfg, err := serial.DecodeJSONConfigStrict(v)
+					if err != nil {
+						return nil, err
+					}
+					return cfg.Build()
+				}
 				return serial.LoadJSONConfig(v)
 			default:
 				return nil, errors.New("unknown type")

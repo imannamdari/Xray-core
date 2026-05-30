@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/uuid"
-	"github.com/imannamdari/xray-core/proxy/vless"
-	. "github.com/imannamdari/xray-core/proxy/vless/encoding"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/uuid"
+	"github.com/xtls/xray-core/proxy/vless"
+	. "github.com/xtls/xray-core/proxy/vless/encoding"
 )
 
 func toAccount(a *vless.Account) protocol.Account {
@@ -45,7 +45,7 @@ func TestRequestSerialization(t *testing.T) {
 	Validator := new(vless.MemoryValidator)
 	Validator.Add(user)
 
-	actualRequest, actualAddons, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)
+	_, actualRequest, actualAddons, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)
 	common.Must(err)
 
 	if r := cmp.Diff(actualRequest, expectedRequest, cmp.AllowUnexported(protocol.ID{})); r != "" {
@@ -53,7 +53,7 @@ func TestRequestSerialization(t *testing.T) {
 	}
 
 	addonsComparer := func(x, y *Addons) bool {
-		return (x.Flow == y.Flow) && (cmp.Equal(x.Seed, y.Seed))
+		return (x.Flow == y.Flow) && cmp.Equal(x.Seed, y.Seed)
 	}
 	if r := cmp.Diff(actualAddons, expectedAddons, cmp.Comparer(addonsComparer)); r != "" {
 		t.Error(r)
@@ -86,7 +86,7 @@ func TestInvalidRequest(t *testing.T) {
 	Validator := new(vless.MemoryValidator)
 	Validator.Add(user)
 
-	_, _, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)
+	_, _, _, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)
 	if err == nil {
 		t.Error("nil error")
 	}
@@ -117,7 +117,7 @@ func TestMuxRequest(t *testing.T) {
 	Validator := new(vless.MemoryValidator)
 	Validator.Add(user)
 
-	actualRequest, actualAddons, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)
+	_, actualRequest, actualAddons, _, err := DecodeRequestHeader(false, nil, &buffer, Validator)
 	common.Must(err)
 
 	if r := cmp.Diff(actualRequest, expectedRequest, cmp.AllowUnexported(protocol.ID{})); r != "" {
@@ -125,7 +125,7 @@ func TestMuxRequest(t *testing.T) {
 	}
 
 	addonsComparer := func(x, y *Addons) bool {
-		return (x.Flow == y.Flow) && (cmp.Equal(x.Seed, y.Seed))
+		return (x.Flow == y.Flow) && cmp.Equal(x.Seed, y.Seed)
 	}
 	if r := cmp.Diff(actualAddons, expectedAddons, cmp.Comparer(addonsComparer)); r != "" {
 		t.Error(r)

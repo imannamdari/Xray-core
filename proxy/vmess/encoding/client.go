@@ -3,24 +3,22 @@ package encoding
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"hash/fnv"
 	"io"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/bitmask"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/crypto"
-	"github.com/imannamdari/xray-core/common/dice"
-	"github.com/imannamdari/xray-core/common/drain"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/proxy/vmess"
-	vmessaead "github.com/imannamdari/xray-core/proxy/vmess/aead"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/bitmask"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/crypto"
+	"github.com/xtls/xray-core/common/dice"
+	"github.com/xtls/xray-core/common/drain"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/proxy/vmess"
+	vmessaead "github.com/xtls/xray-core/proxy/vmess/aead"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -182,8 +180,7 @@ func (c *ClientSession) DecodeResponseHeader(reader io.Reader) (*protocol.Respon
 	aeadResponseHeaderLengthEncryptionKey := vmessaead.KDF16(c.responseBodyKey[:], vmessaead.KDFSaltConstAEADRespHeaderLenKey)
 	aeadResponseHeaderLengthEncryptionIV := vmessaead.KDF(c.responseBodyIV[:], vmessaead.KDFSaltConstAEADRespHeaderLenIV)[:12]
 
-	aeadResponseHeaderLengthEncryptionKeyAESBlock := common.Must2(aes.NewCipher(aeadResponseHeaderLengthEncryptionKey)).(cipher.Block)
-	aeadResponseHeaderLengthEncryptionAEAD := common.Must2(cipher.NewGCM(aeadResponseHeaderLengthEncryptionKeyAESBlock)).(cipher.AEAD)
+	aeadResponseHeaderLengthEncryptionAEAD := crypto.NewAesGcm(aeadResponseHeaderLengthEncryptionKey)
 
 	var aeadEncryptedResponseHeaderLength [18]byte
 	var decryptedResponseHeaderLength int
@@ -205,8 +202,7 @@ func (c *ClientSession) DecodeResponseHeader(reader io.Reader) (*protocol.Respon
 	aeadResponseHeaderPayloadEncryptionKey := vmessaead.KDF16(c.responseBodyKey[:], vmessaead.KDFSaltConstAEADRespHeaderPayloadKey)
 	aeadResponseHeaderPayloadEncryptionIV := vmessaead.KDF(c.responseBodyIV[:], vmessaead.KDFSaltConstAEADRespHeaderPayloadIV)[:12]
 
-	aeadResponseHeaderPayloadEncryptionKeyAESBlock := common.Must2(aes.NewCipher(aeadResponseHeaderPayloadEncryptionKey)).(cipher.Block)
-	aeadResponseHeaderPayloadEncryptionAEAD := common.Must2(cipher.NewGCM(aeadResponseHeaderPayloadEncryptionKeyAESBlock)).(cipher.AEAD)
+	aeadResponseHeaderPayloadEncryptionAEAD := crypto.NewAesGcm(aeadResponseHeaderPayloadEncryptionKey)
 
 	encryptedResponseHeaderBuffer := make([]byte, decryptedResponseHeaderLength+16)
 

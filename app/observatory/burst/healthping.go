@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/imannamdari/xray-core/common/dice"
-	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/dice"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/features/routing"
 )
 
 // HealthPingSettings holds settings for health Checker
@@ -18,29 +20,41 @@ type HealthPingSettings struct {
 	Interval      time.Duration `json:"interval"`
 	SamplingCount int           `json:"sampling"`
 	Timeout       time.Duration `json:"timeout"`
+	HttpMethod    string        `json:"httpMethod"`
 }
 
 // HealthPing is the health checker for balancers
 type HealthPing struct {
-	ctx         context.Context
-	access      sync.Mutex
-	ticker      *time.Ticker
-	tickerClose chan struct{}
+	ctx           context.Context
+	cancelCtx     context.CancelFunc
+	cancelPending atomic.Pointer[context.CancelFunc]
+	dispatcher    routing.Dispatcher
+	access        sync.Mutex
+	ticker        *time.Ticker
 
 	Settings *HealthPingSettings
 	Results  map[string]*HealthPingRTTS
 }
 
 // NewHealthPing creates a new HealthPing with settings
-func NewHealthPing(ctx context.Context, config *HealthPingConfig) *HealthPing {
+func NewHealthPing(ctx context.Context, dispatcher routing.Dispatcher, config *HealthPingConfig) *HealthPing {
 	settings := &HealthPingSettings{}
 	if config != nil {
+
+		var httpMethod string
+		if config.HttpMethod == "" {
+			httpMethod = "HEAD"
+		} else {
+			httpMethod = strings.TrimSpace(config.HttpMethod)
+		}
+
 		settings = &HealthPingSettings{
 			Connectivity:  strings.TrimSpace(config.Connectivity),
 			Destination:   strings.TrimSpace(config.Destination),
 			Interval:      time.Duration(config.Interval),
 			SamplingCount: int(config.SamplingCount),
 			Timeout:       time.Duration(config.Timeout),
+			HttpMethod:    httpMethod,
 		}
 	}
 	if settings.Destination == "" {
@@ -50,10 +64,10 @@ func NewHealthPing(ctx context.Context, config *HealthPingConfig) *HealthPing {
 		settings.Destination = "https://connectivitycheck.gstatic.com/generate_204"
 	}
 	if settings.Interval == 0 {
-		settings.Interval = time.Duration(1) * time.Minute
-	} else if settings.Interval < 10 {
+		settings.Interval = 1 * time.Minute
+	} else if settings.Interval < 10*time.Second {
 		errors.LogWarning(ctx, "health check interval is too small, 10s is applied")
-		settings.Interval = time.Duration(10) * time.Second
+		settings.Interval = 10 * time.Second
 	}
 	if settings.SamplingCount <= 0 {
 		settings.SamplingCount = 10
@@ -61,12 +75,15 @@ func NewHealthPing(ctx context.Context, config *HealthPingConfig) *HealthPing {
 	if settings.Timeout <= 0 {
 		// results are saved after all health pings finish,
 		// a larger timeout could possibly makes checks run longer
-		settings.Timeout = time.Duration(5) * time.Second
+		settings.Timeout = 5 * time.Second
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	return &HealthPing{
-		ctx:      ctx,
-		Settings: settings,
-		Results:  nil,
+		ctx:        ctx,
+		cancelCtx:  cancel,
+		dispatcher: dispatcher,
+		Settings:   settings,
+		Results:    nil,
 	}
 }
 
@@ -77,17 +94,7 @@ func (h *HealthPing) StartScheduler(selector func() ([]string, error)) {
 	}
 	interval := h.Settings.Interval * time.Duration(h.Settings.SamplingCount)
 	ticker := time.NewTicker(interval)
-	tickerClose := make(chan struct{})
 	h.ticker = ticker
-	h.tickerClose = tickerClose
-	go func() {
-		tags, err := selector()
-		if err != nil {
-			errors.LogWarning(h.ctx, "error select outbounds for initial health check: ", err)
-			return
-		}
-		h.Check(tags)
-	}()
 
 	go func() {
 		for {
@@ -97,13 +104,20 @@ func (h *HealthPing) StartScheduler(selector func() ([]string, error)) {
 					errors.LogWarning(h.ctx, "error select outbounds for scheduled health check: ", err)
 					return
 				}
-				h.doCheck(tags, interval, h.Settings.SamplingCount)
+				subCtx, cancel := context.WithCancel(h.ctx)
+				old := h.cancelPending.Swap(&cancel)
+				if old != nil {
+					errors.LogDebug(h.ctx, "scheduled health check not finished before next round, canceling previous one")
+					(*old)()
+				}
+				h.doCheck(subCtx, tags, interval, h.Settings.SamplingCount)
+				h.cancelPending.CompareAndSwap(&cancel, nil)
 				h.Cleanup(tags)
 			}()
 			select {
 			case <-ticker.C:
 				continue
-			case <-tickerClose:
+			case <-h.ctx.Done():
 				return
 			}
 		}
@@ -117,8 +131,7 @@ func (h *HealthPing) StopScheduler() {
 	}
 	h.ticker.Stop()
 	h.ticker = nil
-	close(h.tickerClose)
-	h.tickerClose = nil
+	h.cancelCtx()
 }
 
 // Check implements the HealthChecker
@@ -127,7 +140,7 @@ func (h *HealthPing) Check(tags []string) error {
 		return nil
 	}
 	errors.LogInfo(h.ctx, "perform one-time health check for tags ", tags)
-	h.doCheck(tags, 0, 1)
+	h.doCheck(h.ctx, tags, 0, 1)
 	return nil
 }
 
@@ -138,17 +151,19 @@ type rtt struct {
 
 // doCheck performs the 'rounds' amount checks in given 'duration'. You should make
 // sure all tags are valid for current balancer
-func (h *HealthPing) doCheck(tags []string, duration time.Duration, rounds int) {
+// cancel ctx will stop all pending checks
+func (h *HealthPing) doCheck(ctx context.Context, tags []string, duration time.Duration, rounds int) {
 	count := len(tags) * rounds
 	if count == 0 {
 		return
 	}
 	ch := make(chan *rtt, count)
-
+	timers := make([]*time.Timer, 0, count)
 	for _, tag := range tags {
 		handler := tag
 		client := newPingClient(
 			h.ctx,
+			h.dispatcher,
 			h.Settings.Destination,
 			h.Settings.Timeout,
 			handler,
@@ -158,9 +173,9 @@ func (h *HealthPing) doCheck(tags []string, duration time.Duration, rounds int) 
 			if duration > 0 {
 				delay = time.Duration(dice.RollInt63n(int64(duration)))
 			}
-			time.AfterFunc(delay, func() {
+			timers = append(timers, time.AfterFunc(delay, func() {
 				errors.LogDebug(h.ctx, "checking ", handler)
-				delay, err := client.MeasureDelay()
+				delay, err := client.MeasureDelay(h.Settings.HttpMethod)
 				if err == nil {
 					ch <- &rtt{
 						handler: handler,
@@ -186,14 +201,21 @@ func (h *HealthPing) doCheck(tags []string, duration time.Duration, rounds int) 
 					handler: handler,
 					value:   rttFailed,
 				}
-			})
+			}))
 		}
 	}
 	for i := 0; i < count; i++ {
-		rtt := <-ch
-		if rtt.value > 0 {
-			// should not put results when network is down
-			h.PutResult(rtt.handler, rtt.value)
+		select {
+		case rtt := <-ch:
+			if rtt.value > 0 {
+				// should not put results when network is down
+				h.PutResult(rtt.handler, rtt.value)
+			}
+		case <-ctx.Done():
+			for _, timer := range timers {
+				timer.Stop()
+			}
+			return
 		}
 	}
 }
@@ -247,7 +269,7 @@ func (h *HealthPing) checkConnectivity() bool {
 		h.Settings.Connectivity,
 		h.Settings.Timeout,
 	)
-	if _, err := tester.MeasureDelay(); err != nil {
+	if _, err := tester.MeasureDelay(h.Settings.HttpMethod); err != nil {
 		return false
 	}
 	return true

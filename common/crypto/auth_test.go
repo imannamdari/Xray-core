@@ -2,27 +2,22 @@ package crypto_test
 
 import (
 	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"io"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	. "github.com/imannamdari/xray-core/common/crypto"
-	"github.com/imannamdari/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	. "github.com/xtls/xray-core/common/crypto"
+	"github.com/xtls/xray-core/common/protocol"
 )
 
 func TestAuthenticationReaderWriter(t *testing.T) {
 	key := make([]byte, 16)
 	rand.Read(key)
-	block, err := aes.NewCipher(key)
-	common.Must(err)
 
-	aead, err := cipher.NewGCM(block)
-	common.Must(err)
+	aead := NewAesGcm(key)
 
 	const payloadSize = 1024 * 80
 	rawPayload := make([]byte, payloadSize)
@@ -71,7 +66,7 @@ func TestAuthenticationReaderWriter(t *testing.T) {
 		t.Error(r)
 	}
 
-	_, err = reader.ReadMultiBuffer()
+	_, err := reader.ReadMultiBuffer()
 	if err != io.EOF {
 		t.Error("error: ", err)
 	}
@@ -80,11 +75,8 @@ func TestAuthenticationReaderWriter(t *testing.T) {
 func TestAuthenticationReaderWriterPacket(t *testing.T) {
 	key := make([]byte, 16)
 	common.Must2(rand.Read(key))
-	block, err := aes.NewCipher(key)
-	common.Must(err)
 
-	aead, err := cipher.NewGCM(block)
-	common.Must(err)
+	aead := NewAesGcm(key)
 
 	cache := buf.New()
 	iv := make([]byte, 12)

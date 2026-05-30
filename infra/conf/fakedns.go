@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/imannamdari/xray-core/app/dns/fakedns"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/features/dns"
+	"github.com/xtls/xray-core/app/dns/fakedns"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/features/dns"
 )
 
 type FakeDNSPoolElementConfig struct {
@@ -18,6 +18,18 @@ type FakeDNSPoolElementConfig struct {
 type FakeDNSConfig struct {
 	pool  *FakeDNSPoolElementConfig
 	pools []*FakeDNSPoolElementConfig
+}
+
+// MarshalJSON implements encoding/json.Marshaler.MarshalJSON
+func (f *FakeDNSConfig) MarshalJSON() ([]byte, error) {
+	if (f.pool != nil) != (f.pools != nil) {
+		if f.pool != nil {
+			return json.Marshal(f.pool)
+		} else if f.pools != nil {
+			return json.Marshal(f.pools)
+		}
+	}
+	return nil, errors.New("unexpected config state")
 }
 
 // UnmarshalJSON implements encoding/json.Unmarshaler.UnmarshalJSON
@@ -106,26 +118,17 @@ func (FakeDNSPostProcessingStage) Process(config *Config) error {
 			}
 		}
 
-		found := false
-		// Check if there is a Outbound with necessary sniffer on
-		var inbounds []InboundDetourConfig
-
-		if len(config.InboundConfigs) > 0 {
-			inbounds = append(inbounds, config.InboundConfigs...)
-		}
-		for _, v := range inbounds {
-			if v.SniffingConfig != nil && v.SniffingConfig.Enabled && v.SniffingConfig.DestOverride != nil {
-				for _, dov := range *v.SniffingConfig.DestOverride {
-					if strings.EqualFold(dov, "fakedns") || strings.EqualFold(dov, "fakedns+others") {
-						found = true
-						break
+		// Check if there is a Inbound with necessary sniffer on
+		for _, v := range config.InboundConfigs {
+			if v.SniffingConfig != nil && v.SniffingConfig.Enabled {
+				for _, d := range v.SniffingConfig.DestOverride {
+					if strings.EqualFold(d, "fakedns") || strings.EqualFold(d, "fakedns+others") {
+						return nil
 					}
 				}
 			}
 		}
-		if !found {
-			errors.LogWarning(context.Background(), "Defined FakeDNS but haven't enabled FakeDNS destOverride at any inbound.")
-		}
+		errors.LogWarning(context.Background(), "Defined FakeDNS but haven't enabled FakeDNS destOverride at any inbound.")
 	}
 
 	return nil

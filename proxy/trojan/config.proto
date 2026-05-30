@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package xray.proxy.trojan;
 option csharp_namespace = "Xray.Proxy.Trojan";
-option go_package = "github.com/imannamdari/xray-core/proxy/trojan";
+option go_package = "github.com/xtls/xray-core/proxy/trojan";
 option java_package = "com.xray.proxy.trojan";
 option java_multiple_files = true;
 
@@ -23,7 +23,7 @@ message Fallback {
 }
 
 message ClientConfig {
-  repeated xray.common.protocol.ServerEndpoint server = 1;
+  xray.common.protocol.ServerEndpoint server = 1;
 }
 
 message ServerConfig {

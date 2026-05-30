@@ -5,20 +5,19 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/imannamdari/xray-core/app/dns"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/features/dns"
+	. "github.com/xtls/xray-core/app/dns"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/features/dns"
 )
 
 func TestLocalNameServer(t *testing.T) {
 	s := NewLocalNameServer()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	ips, err := s.QueryIP(ctx, "google.com", net.IP{}, dns.IPOption{
+	ips, _, err := s.QueryIP(ctx, "google.com", dns.IPOption{
 		IPv4Enable: true,
 		IPv6Enable: true,
 		FakeEnable: false,
-	}, false)
+	})
 	cancel()
 	common.Must(err)
 	if len(ips) == 0 {

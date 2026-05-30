@@ -1,11 +1,13 @@
 package conf
 
 import (
+	"strings"
+
 	"google.golang.org/protobuf/proto"
 
-	"github.com/imannamdari/xray-core/app/observatory/burst"
-	"github.com/imannamdari/xray-core/app/router"
-	"github.com/imannamdari/xray-core/infra/conf/cfgcommon/duration"
+	"github.com/xtls/xray-core/app/observatory/burst"
+	"github.com/xtls/xray-core/app/router"
+	"github.com/xtls/xray-core/infra/conf/cfgcommon/duration"
 )
 
 const (
@@ -15,17 +17,14 @@ const (
 	strategyLeastLoad  string = "leastload"
 )
 
-var (
-	strategyConfigLoader = NewJSONConfigLoader(ConfigCreatorCache{
-		strategyRandom:     func() interface{} { return new(strategyEmptyConfig) },
-		strategyLeastPing:  func() interface{} { return new(strategyEmptyConfig) },
-		strategyRoundRobin: func() interface{} { return new(strategyEmptyConfig) },
-		strategyLeastLoad:  func() interface{} { return new(strategyLeastLoadConfig) },
-	}, "type", "settings")
-)
+var strategyConfigLoader = NewJSONConfigLoader(ConfigCreatorCache{
+	strategyRandom:     func() interface{} { return new(strategyEmptyConfig) },
+	strategyLeastPing:  func() interface{} { return new(strategyEmptyConfig) },
+	strategyRoundRobin: func() interface{} { return new(strategyEmptyConfig) },
+	strategyLeastLoad:  func() interface{} { return new(strategyLeastLoadConfig) },
+}, "type", "settings")
 
-type strategyEmptyConfig struct {
-}
+type strategyEmptyConfig struct{}
 
 func (v *strategyEmptyConfig) Build() (proto.Message, error) {
 	return nil, nil
@@ -51,15 +50,23 @@ type healthCheckSettings struct {
 	Interval      duration.Duration `json:"interval"`
 	SamplingCount int               `json:"sampling"`
 	Timeout       duration.Duration `json:"timeout"`
+	HttpMethod    string            `json:"httpMethod"`
 }
 
 func (h healthCheckSettings) Build() (proto.Message, error) {
+	var httpMethod string
+	if h.HttpMethod == "" {
+		httpMethod = "HEAD"
+	} else {
+		httpMethod = strings.TrimSpace(h.HttpMethod)
+	}
 	return &burst.HealthPingConfig{
 		Destination:   h.Destination,
 		Connectivity:  h.Connectivity,
 		Interval:      int64(h.Interval),
 		Timeout:       int64(h.Timeout),
 		SamplingCount: int32(h.SamplingCount),
+		HttpMethod:    httpMethod,
 	}, nil
 }
 

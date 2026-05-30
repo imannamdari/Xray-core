@@ -4,82 +4,24 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/pem"
-	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/ocsp"
-	"github.com/imannamdari/xray-core/common/platform/filesystem"
-	"github.com/imannamdari/xray-core/common/protocol/tls/cert"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/miekg/dns"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/ocsp"
+	"github.com/xtls/xray-core/common/platform/filesystem"
+	"github.com/xtls/xray-core/common/protocol/tls/cert"
+	"github.com/xtls/xray-core/transport/internet"
 )
 
 var globalSessionCache = tls.NewLRUClientSessionCache(128)
-
-// ech key for ech enabled config. tls config use this for tls handshake.
-var ECH string
-
-func (c *Config) UpdateECHEvery(d time.Duration) {
-	for range time.Tick(d) {
-		ech, err := c.FetchECH()
-		fmt.Printf("new ech = %s\n", ech)
-		if err != nil {
-			fmt.Println("failed to get ech")
-			errors.LogWarningInner(context.Background(), err, "failed to get ech")
-		} else {
-			ECH = ech
-		}
-	}
-}
-
-// only support cloudflare ech
-func (c *Config) FetchECH() (string, error) {
-	dc := dns.Client{Timeout: 10 * time.Second}
-
-	d := dns.Fqdn("cloudflare-ech.com")
-	q := dns.Question{
-		Name:   d,
-		Qtype:  dns.TypeHTTPS,
-		Qclass: dns.ClassINET,
-	}
-
-	dnsAddr := "127.0.0.1:53"
-	if c.EchSetting != nil && c.EchSetting.DnsAddr != "" {
-		dnsAddr = c.EchSetting.DnsAddr
-	}
-
-	r, _, err := dc.Exchange(&dns.Msg{
-		MsgHdr: dns.MsgHdr{
-			Id:               dns.Id(),
-			RecursionDesired: true,
-		},
-		Question: []dns.Question{q},
-	}, dnsAddr)
-	if err != nil {
-		return "", err
-	}
-
-	for _, v := range r.Answer {
-		if vv, ok := v.(*dns.HTTPS); ok {
-			for _, vvv := range vv.SVCB.Value {
-				if vvv.Key().String() == "ech" {
-					return vvv.String(), nil
-				}
-			}
-		}
-	}
-
-	return "", errors.New("failed to find ech in response")
-}
 
 // ParseCertificate converts a cert.Certificate to Certificate.
 func ParseCertificate(c *cert.Certificate) *Certificate {
@@ -166,12 +108,12 @@ func setupOcspTicker(entry *Certificate, callback func(isReloaded, isOcspstaplin
 		for {
 			var isReloaded bool
 			if entry.CertificatePath != "" && entry.KeyPath != "" {
-				newCert, err := filesystem.ReadFile(entry.CertificatePath)
+				newCert, err := filesystem.ReadCert(entry.CertificatePath)
 				if err != nil {
 					errors.LogErrorInner(context.Background(), err, "failed to parse certificate")
 					return
 				}
-				newKey, err := filesystem.ReadFile(entry.KeyPath)
+				newKey, err := filesystem.ReadCert(entry.KeyPath)
 				if err != nil {
 					errors.LogErrorInner(context.Background(), err, "failed to parse key")
 					return
@@ -332,34 +274,90 @@ func getNewGetCertificateFunc(certs []*tls.Certificate, rejectUnknownSNI bool) f
 }
 
 func (c *Config) parseServerName() string {
+	if IsFromMitm(c.ServerName) {
+		return ""
+	}
 	return c.ServerName
 }
 
-func (c *Config) verifyPeerCert(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-	if c.PinnedPeerCertificateChainSha256 != nil {
-		hashValue := GenerateCertChainHash(rawCerts)
-		for _, v := range c.PinnedPeerCertificateChainSha256 {
-			if hmac.Equal(hashValue, v) {
+func (r *RandCarrier) verifyPeerCert(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) (err error) {
+	// extract x509 certificates from rawCerts (verifiedChains will be nil if InsecureSkipVerify is true)
+	certs := make([]*x509.Certificate, len(rawCerts))
+	for i, asn1Data := range rawCerts {
+		certs[i], _ = x509.ParseCertificate(asn1Data)
+	}
+	if len(certs) == 0 {
+		return errors.New("unexpected certs")
+	}
+
+	// directly return success if pinned cert is leaf
+	// or replace RootCAs if pinned cert is CA (and can be used in VerifyPeerCertByName)
+	CAs := r.RootCAs
+	var verifyResult verifyResult
+	var verifiedCert *x509.Certificate
+	if r.PinnedPeerCertSha256 != nil {
+		verifyResult, verifiedCert = verifyChain(certs, r.PinnedPeerCertSha256)
+		switch verifyResult {
+		case certNotFound:
+			return errors.New("peer cert is unrecognized (against pinnedPeerCertSha256)")
+		case foundLeaf:
+			return nil
+		case foundCA:
+			CAs = x509.NewCertPool()
+			CAs.AddCert(verifiedCert)
+		default:
+			panic("impossible pinnedPeerCertSha256 verify result")
+		}
+	}
+
+	if r.VerifyPeerCertByName != nil { // RAW's Dial() may make it empty but not nil
+		opts := x509.VerifyOptions{
+			Roots:         CAs,
+			CurrentTime:   time.Now(),
+			Intermediates: x509.NewCertPool(),
+		}
+		for _, cert := range certs[1:] {
+			opts.Intermediates.AddCert(cert)
+		}
+		for _, opts.DNSName = range r.VerifyPeerCertByName {
+			if _, err := certs[0].Verify(opts); err == nil {
 				return nil
 			}
 		}
-		return errors.New("peer cert is unrecognized: ", base64.StdEncoding.EncodeToString(hashValue))
+		if verifyResult == foundCA {
+			errors.New("peer cert is invalid (against pinned CA and verifyPeerCertByName)")
+		}
+		return errors.New("peer cert is invalid (against root CAs and verifyPeerCertByName)")
 	}
 
-	if c.PinnedPeerCertificatePublicKeySha256 != nil {
-		for _, v := range verifiedChains {
-			for _, cert := range v {
-				publicHash := GenerateCertPublicKeyHash(cert)
-				for _, c := range c.PinnedPeerCertificatePublicKeySha256 {
-					if hmac.Equal(publicHash, c) {
-						return nil
-					}
-				}
-			}
+	if verifyResult == foundCA { // if found CA, we need to verify here
+		opts := x509.VerifyOptions{
+			Roots:         CAs,
+			CurrentTime:   time.Now(),
+			Intermediates: x509.NewCertPool(),
+			DNSName:       r.Config.ServerName,
 		}
-		return errors.New("peer public key is unrecognized.")
+		for _, cert := range certs[1:] {
+			opts.Intermediates.AddCert(cert)
+		}
+		if _, err := certs[0].Verify(opts); err == nil {
+			return nil
+		}
+		return errors.New("peer cert is invalid (against pinned CA and serverName)")
 	}
-	return nil
+
+	return nil // r.PinnedPeerCertSha256==nil && r.verifyPeerCertByName==nil
+}
+
+type RandCarrier struct {
+	Config               *tls.Config
+	RootCAs              *x509.CertPool
+	VerifyPeerCertByName []string
+	PinnedPeerCertSha256 [][]byte
+}
+
+func (r *RandCarrier) Read(p []byte) (n int, err error) {
+	return rand.Read(p)
 }
 
 // GetTLSConfig converts this Config into tls.Config.
@@ -373,36 +371,34 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		return &tls.Config{
 			ClientSessionCache:     globalSessionCache,
 			RootCAs:                root,
-			InsecureSkipVerify:     false,
-			NextProtos:             nil,
 			SessionTicketsDisabled: true,
 		}
 	}
 
-	var echConfigs []tls.ECHConfig
-	if c.EnableEch {
-		echPEMKey := fmt.Sprintf("-----BEGIN ECH CONFIGS-----\n%s\n-----END ECH CONFIGS-----", ECH)
-
-		block, rest := pem.Decode([]byte(echPEMKey))
-		if block == nil || block.Type != "ECH CONFIGS" || len(rest) > 0 {
-			errors.LogErrorInner(context.Background(), err, "failed to PEM-decode the ECH configs")
-		}
-
-		echConfigs, err = tls.UnmarshalECHConfigs(block.Bytes)
-		if err != nil {
-			errors.LogErrorInner(context.Background(), err, "failed to unmarshal ECH configs")
-		}
+	randCarrier := &RandCarrier{
+		RootCAs:              root,
+		VerifyPeerCertByName: slices.Clone(c.VerifyPeerCertByName),
+		PinnedPeerCertSha256: c.PinnedPeerCertSha256,
 	}
-
 	config := &tls.Config{
+		InsecureSkipVerify:     c.AllowInsecure,
+		Rand:                   randCarrier,
 		ClientSessionCache:     globalSessionCache,
 		RootCAs:                root,
-		InsecureSkipVerify:     c.AllowInsecure,
-		NextProtos:             c.NextProtocol,
+		NextProtos:             slices.Clone(c.NextProtocol),
 		SessionTicketsDisabled: !c.EnableSessionResumption,
-		VerifyPeerCertificate:  c.verifyPeerCert,
-		ECHEnabled:             c.EnableEch,
-		ClientECHConfigs:       echConfigs,
+		VerifyPeerCertificate:  randCarrier.verifyPeerCert,
+	}
+	randCarrier.Config = config
+	if len(c.VerifyPeerCertByName) > 0 {
+		config.InsecureSkipVerify = true
+	} else {
+		randCarrier.VerifyPeerCertByName = nil
+	}
+	if len(c.PinnedPeerCertSha256) > 0 {
+		config.InsecureSkipVerify = true
+	} else {
+		randCarrier.PinnedPeerCertSha256 = nil
 	}
 
 	for _, opt := range opts {
@@ -418,6 +414,10 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 
 	if sn := c.parseServerName(); len(sn) > 0 {
 		config.ServerName = sn
+	}
+
+	if len(c.CurvePreferences) > 0 {
+		config.CurvePreferences = ParseCurveName(c.CurvePreferences)
 	}
 
 	if len(config.NextProtos) == 0 {
@@ -459,11 +459,17 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 	}
 
 	if len(c.MasterKeyLog) > 0 && c.MasterKeyLog != "none" {
-		writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+		writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
 		if err != nil {
 			errors.LogErrorInner(context.Background(), err, "failed to open ", c.MasterKeyLog, " as master key log")
 		} else {
 			config.KeyLogWriter = writer
+		}
+	}
+	if len(c.EchConfigList) > 0 || len(c.EchServerKeys) > 0 {
+		err := ApplyECH(c, config)
+		if err != nil {
+			errors.LogError(context.Background(), err)
 		}
 	}
 
@@ -482,6 +488,12 @@ func WithDestination(dest net.Destination) Option {
 		if config.ServerName == "" {
 			config.ServerName = dest.Address.String()
 		}
+	}
+}
+
+func WithOverrideName(serverName string) Option {
+	return func(config *tls.Config) {
+		config.ServerName = serverName
 	}
 }
 
@@ -504,4 +516,59 @@ func ConfigFromStreamSettings(settings *internet.MemoryStreamConfig) *Config {
 		return nil
 	}
 	return config
+}
+
+func ParseCurveName(curveNames []string) []tls.CurveID {
+	curveMap := map[string]tls.CurveID{
+		"curvep256":          tls.CurveP256,
+		"curvep384":          tls.CurveP384,
+		"curvep521":          tls.CurveP521,
+		"x25519":             tls.X25519,
+		"x25519mlkem768":     tls.X25519MLKEM768,
+		"secp256r1mlkem768":  tls.SecP256r1MLKEM768,
+		"secp384r1mlkem1024": tls.SecP384r1MLKEM1024,
+	}
+
+	var curveIDs []tls.CurveID
+	for _, name := range curveNames {
+		if curveID, ok := curveMap[strings.ToLower(name)]; ok {
+			curveIDs = append(curveIDs, curveID)
+		} else {
+			errors.LogWarning(context.Background(), "unsupported curve name: "+name)
+		}
+	}
+	return curveIDs
+}
+
+func IsFromMitm(str string) bool {
+	return strings.ToLower(str) == "frommitm"
+}
+
+type verifyResult int
+
+const (
+	certNotFound verifyResult = iota
+	foundLeaf
+	foundCA
+)
+
+func verifyChain(certs []*x509.Certificate, pinnedPeerCertSha256 [][]byte) (verifyResult, *x509.Certificate) {
+	leafHash := GenerateCertHash(certs[0])
+	for _, c := range pinnedPeerCertSha256 {
+		if hmac.Equal(leafHash, c) {
+			return foundLeaf, nil
+		}
+	}
+	certs = certs[1:] // skip leaf
+	for _, cert := range certs {
+		certHash := GenerateCertHash(cert)
+		for _, c := range pinnedPeerCertSha256 {
+			if hmac.Equal(certHash, c) {
+				if cert.IsCA {
+					return foundCA, cert
+				}
+			}
+		}
+	}
+	return certNotFound, nil
 }

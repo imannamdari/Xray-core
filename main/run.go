@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/imannamdari/xray-core/common/cmdarg"
-	"github.com/imannamdari/xray-core/common/errors"
-	clog "github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/platform"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/main/commands/base"
+	"github.com/xtls/xray-core/common/cmdarg"
+	"github.com/xtls/xray-core/common/errors"
+	clog "github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/platform"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/main/commands/base"
 )
 
 var cmdRun = &base.Command{
@@ -28,15 +28,15 @@ var cmdRun = &base.Command{
 	Long: `
 Run Xray with config, the default command.
 
-The -config=file, -c=file flags set the config files for 
+The -config=file, -c=file flags set the config files for
 Xray. Multiple assign is accepted.
 
 The -confdir=dir flag sets a dir with multiple json config
 
-The -format=json flag sets the format of config files. 
+The -format=json flag sets the format of config files.
 Default "auto".
 
-The -test flag tells Xray to test config files only, 
+The -test flag tells Xray to test config files only,
 without launching the server.
 
 The -dump flag tells Xray to print the merged config.
@@ -45,6 +45,7 @@ The -dump flag tells Xray to print the merged config.
 
 func init() {
 	cmdRun.Run = executeRun // break init loop
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 }
 
 var (
@@ -91,12 +92,6 @@ func executeRun(cmd *base.Command, args []string) {
 		os.Exit(-1)
 	}
 	defer server.Close()
-
-	/*
-		conf.FileCache = nil
-		conf.IPCache = nil
-		conf.SiteCache = nil
-	*/
 
 	// Explicitly triggering GC to remove garbage from config loading.
 	runtime.GC()
@@ -181,12 +176,15 @@ func getConfigFilePath(verbose bool) cmdarg.Arg {
 	}
 
 	if workingDir, err := os.Getwd(); err == nil {
-		configFile := filepath.Join(workingDir, "config.json")
-		if fileExists(configFile) {
-			if verbose {
-				log.Println("Using default config: ", configFile)
+		suffixes := []string{".json", ".jsonc", ".toml", ".yaml", ".yml"}
+		for _, suffix := range suffixes {
+			configFile := filepath.Join(workingDir, "config"+suffix)
+			if fileExists(configFile) {
+				if verbose {
+					log.Println("Using default config: ", configFile)
+				}
+				return cmdarg.Arg{configFile}
 			}
-			return cmdarg.Arg{configFile}
 		}
 	}
 
@@ -213,8 +211,6 @@ func getConfigFormat() string {
 
 func startXray() (core.Server, error) {
 	configFiles := getConfigFilePath(true)
-
-	// config, err := core.LoadConfig(getConfigFormat(), configFiles[0], configFiles)
 
 	c, err := core.LoadConfig(getConfigFormat(), configFiles)
 	if err != nil {

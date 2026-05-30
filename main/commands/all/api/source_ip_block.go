@@ -5,34 +5,43 @@ import (
 	"fmt"
 	"strings"
 
-	routerService "github.com/imannamdari/xray-core/app/router/command"
-	cserial "github.com/imannamdari/xray-core/common/serial"
-	"github.com/imannamdari/xray-core/infra/conf/serial"
-	"github.com/imannamdari/xray-core/main/commands/base"
+	routerService "github.com/xtls/xray-core/app/router/command"
+	cserial "github.com/xtls/xray-core/common/serial"
+	"github.com/xtls/xray-core/infra/conf/serial"
+	"github.com/xtls/xray-core/main/commands/base"
 )
 
 var cmdSourceIpBlock = &base.Command{
 	CustomFlags: true,
 	UsageLine:   "{{.Exec}} api sib [--server=127.0.0.1:8080] -outbound=blocked -inbound=socks 1.2.3.4",
-	Short:       "Drop connections by source ip",
+	Short:       "Block connections by source IP",
 	Long: `
-Drop connections by source ip.
+Block connections by source IP address.
+
 Arguments:
-	-s, -server 
+
+	-s, -server <server:port>
 		The API server address. Default 127.0.0.1:8080
-	-t, -timeout
-		Timeout seconds to call API. Default 3
+
+	-t, -timeout <seconds>
+		Timeout in seconds for calling API. Default 3
+
 	-outbound
-		route traffic to specific outbound.
+		Specifies the outbound tag.
+
 	-inbound
-		target traffig from specific inbound.
+		Specifies the inbound tag.
+
 	-ruletag
-		set ruleTag. Default sourceIpBlock
+		The ruleTag. Default sourceIpBlock
+
 	-reset
 		remove ruletag and apply new source IPs. Default false
 
-	Example:
-    {{.Exec}} {{.LongName}} --server=127.0.0.1:8080 c1.json c2.json
+Example:
+
+	{{.Exec}} {{.LongName}} --server=127.0.0.1:8080 -outbound=blocked -inbound=socks 1.2.3.4
+	{{.Exec}} {{.LongName}} --server=127.0.0.1:8080 -outbound=blocked -inbound=socks 1.2.3.4 -reset
 `,
 	Run: executeSourceIpBlock,
 }
@@ -84,7 +93,6 @@ func executeSourceIpBlock(cmd *base.Command, args []string) {
 				"ruleTag" : "%s",
 				"inboundTag": %s,		
 				"outboundTag": "%s",
-				"type": "field",
 				"source": %s
 			  }
 			]
@@ -128,5 +136,4 @@ func executeSourceIpBlock(cmd *base.Command, args []string) {
 		base.Fatalf("failed to perform AddRule: %s", err)
 	}
 	showJSONResponse(resp)
-
 }

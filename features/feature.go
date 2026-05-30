@@ -1,7 +1,7 @@
 package features
 
 import (
-	"github.com/imannamdari/xray-core/common"
+	"github.com/xtls/xray-core/common"
 )
 
 // Feature is the interface for Xray features. All features must implement this interface.

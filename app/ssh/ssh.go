@@ -10,8 +10,8 @@ import (
 	"github.com/armon/go-socks5"
 	"github.com/sirupsen/logrus"
 
-	"github.com/imannamdari/xray-core/common"
-	sshFeature "github.com/imannamdari/xray-core/features/ssh"
+	"github.com/xtls/xray-core/common"
+	sshFeature "github.com/xtls/xray-core/features/ssh"
 )
 
 type SSH struct {
@@ -32,7 +32,7 @@ func New(ctx context.Context, config *Config) (*SSH, error) {
 		user:        config.GetUser(),
 		password:    config.GetPassword(),
 		runningPort: config.GetRunningPort(),
-		closeCh: make(chan struct{}),
+		closeCh:    make(chan struct{}),
 	}
 	return sshS, nil
 }
@@ -52,8 +52,8 @@ func (s *SSH) Start() error {
 }
 
 func (s *SSH) Close() error {
+	close(s.closeCh)
 	if s.listener != nil {
-		close(s.closeCh)
 		if err := (*s.listener).Close(); err != nil {
 			return fmt.Errorf("failed to close listener: %w", err)
 		}

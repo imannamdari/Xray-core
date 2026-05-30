@@ -2,18 +2,17 @@ package kcp
 
 import (
 	"context"
-	"crypto/cipher"
 	gotls "crypto/tls"
 	"sync"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
-	"github.com/imannamdari/xray-core/transport/internet/udp"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
+	"github.com/xtls/xray-core/transport/internet/udp"
 )
 
 type ConnectionID struct {
@@ -30,28 +29,14 @@ type Listener struct {
 	tlsConfig *gotls.Config
 	config    *Config
 	reader    PacketReader
-	header    internet.PacketHeader
-	security  cipher.AEAD
 	addConn   internet.ConnHandler
 }
 
 func NewListener(ctx context.Context, address net.Address, port net.Port, streamSettings *internet.MemoryStreamConfig, addConn internet.ConnHandler) (*Listener, error) {
 	kcpSettings := streamSettings.ProtocolSettings.(*Config)
-	header, err := kcpSettings.GetPackerHeader()
-	if err != nil {
-		return nil, errors.New("failed to create packet header").Base(err).AtError()
-	}
-	security, err := kcpSettings.GetSecurity()
-	if err != nil {
-		return nil, errors.New("failed to create security").Base(err).AtError()
-	}
+
 	l := &Listener{
-		header:   header,
-		security: security,
-		reader: &KCPPacketReader{
-			Header:   header,
-			Security: security,
-		},
+		reader:   &KCPPacketReader{},
 		sessions: make(map[ConnectionID]*Connection),
 		config:   kcpSettings,
 		addConn:  addConn,
@@ -124,11 +109,7 @@ func (l *Listener) OnReceive(payload *buf.Buffer, src net.Destination) {
 			LocalAddr:    localAddr,
 			RemoteAddr:   remoteAddr,
 			Conversation: conv,
-		}, &KCPPacketWriter{
-			Header:   l.header,
-			Security: l.security,
-			Writer:   writer,
-		}, writer, l.config)
+		}, writer, writer, l.config)
 		var netConn stat.Connection = conn
 		if l.tlsConfig != nil {
 			netConn = tls.Server(conn, l.tlsConfig)
@@ -193,5 +174,5 @@ func ListenKCP(ctx context.Context, address net.Address, port net.Port, streamSe
 }
 
 func init() {
-	common.Must(internet.RegisterTransportListener(protocolName, ListenKCP))
+	common.Must(internet.RegisterTransportListener(ProtocolName, ListenKCP))
 }

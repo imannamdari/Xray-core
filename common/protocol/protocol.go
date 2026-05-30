@@ -1,3 +1,7 @@
-package protocol // import "github.com/imannamdari/xray-core/common/protocol"
+package protocol // import "github.com/xtls/xray-core/common/protocol"
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
+import (
+	"errors"
+)
+
+var ErrProtoNeedMoreData = errors.New("protocol matches, but need more data to complete sniffing")

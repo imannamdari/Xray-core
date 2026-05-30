@@ -4,12 +4,12 @@ import (
 	"context"
 	sync "sync"
 
-	"github.com/imannamdari/xray-core/app/observatory"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/extension"
-	"github.com/imannamdari/xray-core/features/outbound"
+	"github.com/xtls/xray-core/app/observatory"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/extension"
+	"github.com/xtls/xray-core/features/outbound"
 )
 
 type BalancingStrategy interface {
@@ -31,6 +31,12 @@ type RoundRobinStrategy struct {
 
 func (s *RoundRobinStrategy) InjectContext(ctx context.Context) {
 	s.ctx = ctx
+	if len(s.FallbackTag) > 0 {
+		common.Must(core.RequireFeatures(s.ctx, func(observatory extension.Observatory) error {
+			s.observatory = observatory
+			return nil
+		}))
+	}
 }
 
 func (s *RoundRobinStrategy) GetPrincipleTarget(strings []string) []string {
@@ -38,12 +44,6 @@ func (s *RoundRobinStrategy) GetPrincipleTarget(strings []string) []string {
 }
 
 func (s *RoundRobinStrategy) PickOutbound(tags []string) string {
-	if len(s.FallbackTag) > 0 && s.observatory == nil {
-		common.Must(core.RequireFeatures(s.ctx, func(observatory extension.Observatory) error {
-			s.observatory = observatory
-			return nil
-		}))
-	}
 	if s.observatory != nil {
 		observeReport, err := s.observatory.GetObservation(s.ctx)
 		if err == nil {

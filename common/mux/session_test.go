@@ -3,13 +3,13 @@ package mux_test
 import (
 	"testing"
 
-	. "github.com/imannamdari/xray-core/common/mux"
+	. "github.com/xtls/xray-core/common/mux"
 )
 
 func TestSessionManagerAdd(t *testing.T) {
 	m := NewSessionManager()
 
-	s := m.Allocate()
+	s := m.Allocate(&ClientStrategy{})
 	if s.ID != 1 {
 		t.Error("id: ", s.ID)
 	}
@@ -17,7 +17,7 @@ func TestSessionManagerAdd(t *testing.T) {
 		t.Error("size: ", m.Size())
 	}
 
-	s = m.Allocate()
+	s = m.Allocate(&ClientStrategy{})
 	if s.ID != 2 {
 		t.Error("id: ", s.ID)
 	}
@@ -39,13 +39,13 @@ func TestSessionManagerAdd(t *testing.T) {
 
 func TestSessionManagerClose(t *testing.T) {
 	m := NewSessionManager()
-	s := m.Allocate()
+	s := m.Allocate(&ClientStrategy{})
 
-	if m.CloseIfNoSession() {
+	if m.CloseIfNoSessionAndIdle(m.Size(), m.Count()) {
 		t.Error("able to close")
 	}
 	m.Remove(false, s.ID)
-	if !m.CloseIfNoSession() {
+	if !m.CloseIfNoSessionAndIdle(m.Size(), m.Count()) {
 		t.Error("not able to close")
 	}
 }

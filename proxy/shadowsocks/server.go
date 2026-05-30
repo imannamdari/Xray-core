@@ -4,21 +4,21 @@ import (
 	"context"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	udp_proto "github.com/imannamdari/xray-core/common/protocol/udp"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/udp"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	udp_proto "github.com/xtls/xray-core/common/protocol/udp"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/task"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/udp"
 )
 
 type Server struct {
@@ -63,6 +63,21 @@ func (s *Server) RemoveUser(ctx context.Context, e string) error {
 	return s.validator.Del(e)
 }
 
+// GetUser implements proxy.UserManager.GetUser().
+func (s *Server) GetUser(ctx context.Context, email string) *protocol.MemoryUser {
+	return s.validator.GetByEmail(email)
+}
+
+// GetUsers implements proxy.UserManager.GetUsers().
+func (s *Server) GetUsers(ctx context.Context) []*protocol.MemoryUser {
+	return s.validator.GetAll()
+}
+
+// GetUsersCount implements proxy.UserManager.GetUsersCount().
+func (s *Server) GetUsersCount(context.Context) int64 {
+	return s.validator.GetCount()
+}
+
 func (s *Server) Network() []net.Network {
 	list := s.config.Network
 	if len(list) == 0 {
@@ -89,11 +104,11 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 func (s *Server) handleUDPPayload(ctx context.Context, conn stat.Connection, dispatcher routing.Dispatcher) error {
 	udpServer := udp.NewDispatcher(dispatcher, func(ctx context.Context, packet *udp_proto.Packet) {
 		request := protocol.RequestHeaderFromContext(ctx)
+		payload := packet.Payload
 		if request == nil {
+			payload.Release()
 			return
 		}
-
-		payload := packet.Payload
 
 		if payload.UDP != nil {
 			request = &protocol.RequestHeader{
@@ -109,10 +124,11 @@ func (s *Server) handleUDPPayload(ctx context.Context, conn stat.Connection, dis
 			errors.LogWarningInner(ctx, err, "failed to encode UDP packet")
 			return
 		}
-		defer data.Release()
 
 		conn.Write(data.Bytes())
+		data.Release()
 	})
+	defer udpServer.RemoveRay()
 
 	inbound := session.InboundFromContext(ctx)
 	var dest *net.Destination

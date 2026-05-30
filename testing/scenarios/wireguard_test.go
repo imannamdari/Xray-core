@@ -4,19 +4,19 @@ import (
 	"testing"
 	//"time"
 
-	"github.com/imannamdari/xray-core/app/log"
-	"github.com/imannamdari/xray-core/app/proxyman"
-	"github.com/imannamdari/xray-core/common"
-	clog "github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/serial"
-	core "github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/infra/conf"
-	"github.com/imannamdari/xray-core/proxy/dokodemo"
-	"github.com/imannamdari/xray-core/proxy/freedom"
-	"github.com/imannamdari/xray-core/proxy/wireguard"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
-	"github.com/imannamdari/xray-core/testing/servers/udp"
+	"github.com/xtls/xray-core/app/log"
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/common"
+	clog "github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/infra/conf"
+	"github.com/xtls/xray-core/proxy/dokodemo"
+	"github.com/xtls/xray-core/proxy/freedom"
+	"github.com/xtls/xray-core/proxy/wireguard"
+	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/testing/servers/udp"
 	//"golang.org/x/sync/errgroup"
 )
 
@@ -48,11 +48,11 @@ func TestWireguard(t *testing.T) {
 					Listen:   net.NewIPOrDomain(net.LocalHostIP),
 				}),
 				ProxySettings: serial.ToTypedMessage(&wireguard.DeviceConfig{
-					IsClient:   false,
-					KernelMode: false,
-					Endpoint:   []string{"10.0.0.1"},
-					Mtu:        1420,
-					SecretKey:  serverPrivate,
+					IsClient:    false,
+					NoKernelTun: false,
+					Endpoint:    []string{"10.0.0.1"},
+					Mtu:         1420,
+					SecretKey:   serverPrivate,
 					Peers: []*wireguard.PeerConfig{{
 						PublicKey:  serverPublic,
 						AllowedIps: []string{"0.0.0.0/0", "::0/0"},
@@ -62,7 +62,9 @@ func TestWireguard(t *testing.T) {
 		},
 		Outbound: []*core.OutboundHandlerConfig{
 			{
-				ProxySettings: serial.ToTypedMessage(&freedom.Config{}),
+				ProxySettings: serial.ToTypedMessage(&freedom.Config{
+					FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
+				}),
 			},
 		},
 	}
@@ -82,20 +84,20 @@ func TestWireguard(t *testing.T) {
 					Listen:   net.NewIPOrDomain(net.LocalHostIP),
 				}),
 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
-					Address:  net.NewIPOrDomain(dest.Address),
-					Port:     uint32(dest.Port),
-					Networks: []net.Network{net.Network_TCP},
+					RewriteAddress:  net.NewIPOrDomain(dest.Address),
+					RewritePort:     uint32(dest.Port),
+					AllowedNetworks: []net.Network{net.Network_TCP},
 				}),
 			},
 		},
 		Outbound: []*core.OutboundHandlerConfig{
 			{
 				ProxySettings: serial.ToTypedMessage(&wireguard.DeviceConfig{
-					IsClient:   true,
-					KernelMode: false,
-					Endpoint:   []string{"10.0.0.2"},
-					Mtu:        1420,
-					SecretKey:  clientPrivate,
+					IsClient:    true,
+					NoKernelTun: false,
+					Endpoint:    []string{"10.0.0.2"},
+					Mtu:         1420,
+					SecretKey:   clientPrivate,
 					Peers: []*wireguard.PeerConfig{{
 						Endpoint:   "127.0.0.1:" + serverPort.String(),
 						PublicKey:  clientPublic,

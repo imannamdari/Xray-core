@@ -2,28 +2,28 @@ package shadowsocks
 
 import (
 	"bytes"
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
 	"crypto/sha1"
 	"io"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/antireplay"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/crypto"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/protocol"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/crypto"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/protocol"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 )
 
 // MemoryAccount is an account type converted from Account.
 type MemoryAccount struct {
-	Cipher Cipher
-	Key    []byte
-
-	replayFilter antireplay.GeneralizedReplayFilter
+	Cipher     Cipher
+	CipherType CipherType
+	Key        []byte
+	Password   string
 }
 
 var ErrIVNotUnique = errors.New("IV is not unique")
@@ -36,22 +36,15 @@ func (a *MemoryAccount) Equals(another protocol.Account) bool {
 	return false
 }
 
-func (a *MemoryAccount) CheckIV(iv []byte) error {
-	if a.replayFilter == nil {
-		return nil
+func (a *MemoryAccount) ToProto() proto.Message {
+	return &Account{
+		CipherType: a.CipherType,
+		Password:   a.Password,
 	}
-	if a.replayFilter.Check(iv) {
-		return nil
-	}
-	return ErrIVNotUnique
 }
 
 func createAesGcm(key []byte) cipher.AEAD {
-	block, err := aes.NewCipher(key)
-	common.Must(err)
-	gcm, err := cipher.NewGCM(block)
-	common.Must(err)
-	return gcm
+	return crypto.NewAesGcm(key)
 }
 
 func createChaCha20Poly1305(key []byte) cipher.AEAD {
@@ -106,14 +99,10 @@ func (a *Account) AsAccount() (protocol.Account, error) {
 		return nil, errors.New("failed to get cipher").Base(err)
 	}
 	return &MemoryAccount{
-		Cipher: Cipher,
-		Key:    passwordToCipherKey([]byte(a.Password), Cipher.KeySize()),
-		replayFilter: func() antireplay.GeneralizedReplayFilter {
-			if a.IvCheck {
-				return antireplay.NewBloomRing()
-			}
-			return nil
-		}(),
+		Cipher:     Cipher,
+		CipherType: a.CipherType,
+		Key:        passwordToCipherKey([]byte(a.Password), Cipher.KeySize()),
+		Password:   a.Password,
 	}, nil
 }
 

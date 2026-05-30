@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/features/outbound"
-	"github.com/imannamdari/xray-core/features/routing"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/features/outbound"
+	"github.com/xtls/xray-core/features/routing"
 )
 
 type Rule struct {
@@ -15,6 +15,7 @@ type Rule struct {
 	RuleTag   string
 	Balancer  *Balancer
 	Condition Condition
+	Webhook   *WebhookNotifier
 }
 
 func (r *Rule) GetTag() (string, error) {
@@ -32,64 +33,36 @@ func (r *Rule) Apply(ctx routing.Context) bool {
 func (rr *RoutingRule) BuildCondition() (Condition, error) {
 	conds := NewConditionChan()
 
-	if len(rr.Domain) > 0 {
-		switch rr.DomainMatcher {
-		case "linear":
-			matcher, err := NewDomainMatcher(rr.Domain)
-			if err != nil {
-				return nil, errors.New("failed to build domain condition").Base(err)
-			}
-			conds.Add(matcher)
-		case "mph", "hybrid":
-			fallthrough
-		default:
-			matcher, err := NewMphMatcherGroup(rr.Domain)
-			if err != nil {
-				return nil, errors.New("failed to build domain condition with MphDomainMatcher").Base(err)
-			}
-			errors.LogDebug(context.Background(), "MphDomainMatcher is enabled for ", len(rr.Domain), " domain rule(s)")
-			conds.Add(matcher)
-		}
-	}
-
-	if len(rr.UserEmail) > 0 {
-		conds.Add(NewUserMatcher(rr.UserEmail))
-	}
-
 	if len(rr.InboundTag) > 0 {
 		conds.Add(NewInboundTagMatcher(rr.InboundTag))
-	}
-
-	if rr.PortList != nil {
-		conds.Add(NewPortMatcher(rr.PortList, false))
-	}
-
-	if rr.SourcePortList != nil {
-		conds.Add(NewPortMatcher(rr.SourcePortList, true))
 	}
 
 	if len(rr.Networks) > 0 {
 		conds.Add(NewNetworkMatcher(rr.Networks))
 	}
 
-	if len(rr.Geoip) > 0 {
-		cond, err := NewMultiGeoIPMatcher(rr.Geoip, false)
-		if err != nil {
-			return nil, err
-		}
-		conds.Add(cond)
-	}
-
-	if len(rr.SourceGeoip) > 0 {
-		cond, err := NewMultiGeoIPMatcher(rr.SourceGeoip, true)
-		if err != nil {
-			return nil, err
-		}
-		conds.Add(cond)
-	}
-
 	if len(rr.Protocol) > 0 {
 		conds.Add(NewProtocolMatcher(rr.Protocol))
+	}
+
+	if rr.PortList != nil {
+		conds.Add(NewPortMatcher(rr.PortList, MatcherAsType_Target))
+	}
+
+	if rr.SourcePortList != nil {
+		conds.Add(NewPortMatcher(rr.SourcePortList, MatcherAsType_Source))
+	}
+
+	if rr.LocalPortList != nil {
+		conds.Add(NewPortMatcher(rr.LocalPortList, MatcherAsType_Local))
+	}
+
+	if rr.VlessRouteList != nil {
+		conds.Add(NewPortMatcher(rr.VlessRouteList, MatcherAsType_VlessRoute))
+	}
+
+	if len(rr.UserEmail) > 0 {
+		conds.Add(NewUserMatcher(rr.UserEmail))
 	}
 
 	if len(rr.Attributes) > 0 {
@@ -98,6 +71,43 @@ func (rr *RoutingRule) BuildCondition() (Condition, error) {
 			configuredKeys[strings.ToLower(key)] = regexp.MustCompile(value)
 		}
 		conds.Add(&AttributeMatcher{configuredKeys})
+	}
+
+	if len(rr.Ip) > 0 {
+		cond, err := NewIPMatcher(rr.Ip, MatcherAsType_Target)
+		if err != nil {
+			return nil, err
+		}
+		conds.Add(cond)
+	}
+
+	if len(rr.SourceIp) > 0 {
+		cond, err := NewIPMatcher(rr.SourceIp, MatcherAsType_Source)
+		if err != nil {
+			return nil, err
+		}
+		conds.Add(cond)
+	}
+
+	if len(rr.LocalIp) > 0 {
+		cond, err := NewIPMatcher(rr.LocalIp, MatcherAsType_Local)
+		if err != nil {
+			return nil, err
+		}
+		conds.Add(cond)
+		errors.LogWarning(context.Background(), "Due to some limitations, in UDP connections, localIP is always equal to listen interface IP, so \"localIP\" rule condition does not work properly on UDP inbound connections that listen on all interfaces")
+	}
+
+	if len(rr.Domain) > 0 {
+		cond, err := NewDomainMatcher(rr.Domain)
+		if err != nil {
+			return nil, err
+		}
+		conds.Add(cond)
+	}
+
+	if len(rr.Process) > 0 {
+		conds.Add(NewProcessNameMatcher(rr.Process))
 	}
 
 	if conds.Len() == 0 {

@@ -3,9 +3,9 @@ package pipe
 import (
 	"context"
 
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/signal/done"
-	"github.com/imannamdari/xray-core/features/policy"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/features/policy"
 )
 
 // Option for creating new Pipes.
@@ -59,7 +59,7 @@ func New(opts ...Option) (*Reader, *Writer) {
 	}
 
 	for _, opt := range opts {
-		opt(&(p.option))
+		opt(&p.option)
 	}
 
 	return &Reader{

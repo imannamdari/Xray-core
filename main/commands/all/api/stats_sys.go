@@ -1,21 +1,28 @@
 package api
 
 import (
-	statsService "github.com/imannamdari/xray-core/app/stats/command"
-	"github.com/imannamdari/xray-core/main/commands/base"
+	statsService "github.com/xtls/xray-core/app/stats/command"
+	"github.com/xtls/xray-core/main/commands/base"
 )
 
 var cmdSysStats = &base.Command{
 	CustomFlags: true,
 	UsageLine:   "{{.Exec}} api statssys [--server=127.0.0.1:8080]",
-	Short:       "Get system statistics",
+	Short:       "Retrieve system statistics",
 	Long: `
-Get system statistics from Xray.
+Retrieve system statistics from Xray.
+
 Arguments:
-	-s, -server 
+
+	-s, -server <server:port>
 		The API server address. Default 127.0.0.1:8080
-	-t, -timeout
-		Timeout seconds to call API. Default 3
+
+	-t, -timeout <seconds>
+		Timeout in seconds for calling API. Default 3
+
+Example:
+
+	{{.Exec}} {{.LongName}} --server=127.0.0.1:8080
 `,
 	Run: executeSysStats,
 }

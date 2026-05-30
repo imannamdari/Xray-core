@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/imannamdari/xray-core/common/platform"
-	"github.com/imannamdari/xray-core/features"
+	"github.com/xtls/xray-core/common/platform"
+	"github.com/xtls/xray-core/features"
 )
 
 // Timeout contains limits for connection timeout.
@@ -27,6 +27,8 @@ type Stats struct {
 	UserUplink bool
 	// Whether or not to enable stat counter for user downlink traffic.
 	UserDownlink bool
+	// Whether or not to enable online map for user.
+	UserOnline bool
 }
 
 // Buffer contains settings for internal buffer.
@@ -123,6 +125,7 @@ func SessionDefault() Session {
 		Stats: Stats{
 			UserUplink:   false,
 			UserDownlink: false,
+			UserOnline:   false,
 		},
 		Buffer: defaultBufferPolicy(),
 	}

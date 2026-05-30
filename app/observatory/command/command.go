@@ -3,10 +3,10 @@ package command
 import (
 	"context"
 
-	"github.com/imannamdari/xray-core/app/observatory"
-	"github.com/imannamdari/xray-core/common"
-	core "github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/extension"
+	"github.com/xtls/xray-core/app/observatory"
+	"github.com/xtls/xray-core/common"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/extension"
 	"google.golang.org/grpc"
 )
 
@@ -38,7 +38,7 @@ func init() {
 		sv := &service{v: s}
 		err := s.RequireFeatures(func(Observatory extension.Observatory) {
 			sv.observatory = Observatory
-		})
+		}, false)
 		if err != nil {
 			return nil, err
 		}

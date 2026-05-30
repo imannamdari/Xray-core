@@ -3,9 +3,10 @@ package conf
 import (
 	"google.golang.org/protobuf/proto"
 
-	"github.com/imannamdari/xray-core/app/observatory"
-	"github.com/imannamdari/xray-core/app/observatory/burst"
-	"github.com/imannamdari/xray-core/infra/conf/cfgcommon/duration"
+	"github.com/xtls/xray-core/app/observatory"
+	"github.com/xtls/xray-core/app/observatory/burst"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/infra/conf/cfgcommon/duration"
 )
 
 type ObservatoryConfig struct {
@@ -26,6 +27,9 @@ type BurstObservatoryConfig struct {
 }
 
 func (b BurstObservatoryConfig) Build() (proto.Message, error) {
+	if b.HealthCheck == nil {
+		return nil, errors.New("BurstObservatory requires a valid pingConfig")
+	}
 	if result, err := b.HealthCheck.Build(); err == nil {
 		return &burst.Config{SubjectSelector: b.SubjectSelector, PingConfig: result.(*burst.HealthPingConfig)}, nil
 	} else {

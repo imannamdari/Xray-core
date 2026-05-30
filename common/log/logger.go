@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/imannamdari/xray-core/common/platform"
-	"github.com/imannamdari/xray-core/common/signal/done"
-	"github.com/imannamdari/xray-core/common/signal/semaphore"
+	"github.com/xtls/xray-core/common/platform"
+	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/common/signal/semaphore"
 )
 
 // Writer is the interface for writing logs.
@@ -36,7 +36,7 @@ type serverityLogger struct {
 func NewLogger(logWriterCreator WriterCreator) Handler {
 	return &generalLogger{
 		creator: logWriterCreator,
-		buffer:  make(chan Message, 16),
+		buffer:  make(chan Message, 128),
 		access:  semaphore.New(1),
 		done:    done.New(),
 	}
@@ -46,7 +46,7 @@ func ReplaceWithSeverityLogger(serverity Severity) {
 	w := CreateStdoutLogWriter()
 	g := &generalLogger{
 		creator: w,
-		buffer:  make(chan Message, 16),
+		buffer:  make(chan Message, 128),
 		access:  semaphore.New(1),
 		done:    done.New(),
 	}
@@ -98,7 +98,6 @@ func (l *generalLogger) run() {
 }
 
 func (l *generalLogger) Handle(msg Message) {
-
 	select {
 	case l.buffer <- msg:
 	default:
@@ -146,7 +145,7 @@ func (w *fileLogWriter) Close() error {
 func CreateStdoutLogWriter() WriterCreator {
 	return func() Writer {
 		return &consoleLogWriter{
-			logger: log.New(os.Stdout, "", log.Ldate|log.Ltime),
+			logger: log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds),
 		}
 	}
 }
@@ -155,7 +154,7 @@ func CreateStdoutLogWriter() WriterCreator {
 func CreateStderrLogWriter() WriterCreator {
 	return func() Writer {
 		return &consoleLogWriter{
-			logger: log.New(os.Stderr, "", log.Ldate|log.Ltime),
+			logger: log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmicroseconds),
 		}
 	}
 }
@@ -174,7 +173,7 @@ func CreateFileLogWriter(path string) (WriterCreator, error) {
 		}
 		return &fileLogWriter{
 			file:   file,
-			logger: log.New(file, "", log.Ldate|log.Ltime),
+			logger: log.New(file, "", log.Ldate|log.Ltime|log.Lmicroseconds),
 		}
 	}, nil
 }

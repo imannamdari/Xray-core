@@ -1,20 +1,18 @@
 package reverse
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
-
 import (
 	"context"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	core "github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/outbound"
-	"github.com/imannamdari/xray-core/features/routing"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/outbound"
+	"github.com/xtls/xray-core/features/routing"
 )
 
 const (
-	internalDomain = "reverse.internal.v2fly.org" // make reverse proxy compatible with v2fly
+	internalDomain = "reverse"
 )
 
 func isDomain(dest net.Destination, domain string) bool {

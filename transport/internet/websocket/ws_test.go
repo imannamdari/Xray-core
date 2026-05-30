@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol/tls/cert"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
-	. "github.com/imannamdari/xray-core/transport/internet/websocket"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol/tls/cert"
+	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
+	. "github.com/xtls/xray-core/transport/internet/websocket"
 )
 
 func Test_listenWSAndDial(t *testing.T) {
@@ -123,6 +123,8 @@ func Test_listenWSAndDial_TLS(t *testing.T) {
 
 	start := time.Now()
 
+	ct, ctHash := cert.MustGenerate(nil, cert.CommonName("localhost"))
+
 	streamSettings := &internet.MemoryStreamConfig{
 		ProtocolName: "websocket",
 		ProtocolSettings: &Config{
@@ -130,8 +132,8 @@ func Test_listenWSAndDial_TLS(t *testing.T) {
 		},
 		SecurityType: "tls",
 		SecuritySettings: &tls.Config{
-			AllowInsecure: true,
-			Certificate:   []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil, cert.CommonName("localhost")))},
+			Certificate:          []*tls.Certificate{tls.ParseCertificate(ct)},
+			PinnedPeerCertSha256: [][]byte{ctHash[:]},
 		},
 	}
 	listen, err := ListenWS(context.Background(), net.LocalHostIP, listenPort, streamSettings, func(conn stat.Connection) {

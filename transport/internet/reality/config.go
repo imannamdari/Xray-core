@@ -7,9 +7,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/transport/internet"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
 	"github.com/xtls/reality"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/transport/internet"
 )
 
 func (c *Config) GetREALITYConfig() *reality.Config {
@@ -32,6 +33,20 @@ func (c *Config) GetREALITYConfig() *reality.Config {
 
 		KeyLogWriter: KeyLogWriterFromConfig(c),
 	}
+	if c.Mldsa65Seed != nil {
+		_, key := mldsa65.NewKeyFromSeed((*[32]byte)(c.Mldsa65Seed))
+		config.Mldsa65Key = key.Bytes()
+	}
+	if c.LimitFallbackUpload != nil {
+		config.LimitFallbackUpload.AfterBytes = c.LimitFallbackUpload.AfterBytes
+		config.LimitFallbackUpload.BytesPerSec = c.LimitFallbackUpload.BytesPerSec
+		config.LimitFallbackUpload.BurstBytesPerSec = c.LimitFallbackUpload.BurstBytesPerSec
+	}
+	if c.LimitFallbackDownload != nil {
+		config.LimitFallbackDownload.AfterBytes = c.LimitFallbackDownload.AfterBytes
+		config.LimitFallbackDownload.BytesPerSec = c.LimitFallbackDownload.BytesPerSec
+		config.LimitFallbackDownload.BurstBytesPerSec = c.LimitFallbackDownload.BurstBytesPerSec
+	}
 	config.ServerNames = make(map[string]bool)
 	for _, serverName := range c.ServerNames {
 		config.ServerNames[serverName] = true
@@ -48,7 +63,7 @@ func KeyLogWriterFromConfig(c *Config) io.Writer {
 		return nil
 	}
 
-	writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	writer, err := os.OpenFile(c.MasterKeyLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
 	if err != nil {
 		errors.LogErrorInner(context.Background(), err, "failed to open ", c.MasterKeyLog, " as master key log")
 	}

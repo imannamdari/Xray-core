@@ -7,16 +7,15 @@ import (
 	_ "net/http/pprof"
 	"strings"
 
-	"github.com/imannamdari/xray-core/app/observatory"
-	"github.com/imannamdari/xray-core/app/stats"
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/signal/done"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/extension"
-	"github.com/imannamdari/xray-core/features/outbound"
-	feature_stats "github.com/imannamdari/xray-core/features/stats"
+	"github.com/xtls/xray-core/app/observatory"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/extension"
+	"github.com/xtls/xray-core/features/outbound"
+	feature_stats "github.com/xtls/xray-core/features/stats"
 )
 
 type MetricsHandler struct {
@@ -24,28 +23,27 @@ type MetricsHandler struct {
 	statsManager feature_stats.Manager
 	observatory  extension.Observatory
 	tag          string
+	listen       string
+	tcpListener  net.Listener
 }
 
 // NewMetricsHandler creates a new MetricsHandler based on the given config.
 func NewMetricsHandler(ctx context.Context, config *Config) (*MetricsHandler, error) {
 	c := &MetricsHandler{
-		tag: config.Tag,
+		tag:    config.Tag,
+		listen: config.Listen,
 	}
 	common.Must(core.RequireFeatures(ctx, func(om outbound.Manager, sm feature_stats.Manager) {
 		c.statsManager = sm
 		c.ohm = om
 	}))
 	expvar.Publish("stats", expvar.Func(func() interface{} {
-		manager, ok := c.statsManager.(*stats.Manager)
-		if !ok {
-			return nil
-		}
 		resp := map[string]map[string]map[string]int64{
 			"inbound":  {},
 			"outbound": {},
 			"user":     {},
 		}
-		manager.VisitCounters(func(name string, counter feature_stats.Counter) bool {
+		c.statsManager.VisitCounters(func(name string, counter feature_stats.Counter) bool {
 			nameSplit := strings.Split(name, ">>>")
 			typeName, tagOrUser, direction := nameSplit[0], nameSplit[1], nameSplit[3]
 			if item, found := resp[typeName][tagOrUser]; found {
@@ -87,6 +85,22 @@ func (p *MetricsHandler) Type() interface{} {
 }
 
 func (p *MetricsHandler) Start() error {
+	// direct listen a port if listen is set
+	if p.listen != "" {
+		TCPlistener, err := net.Listen("tcp", p.listen)
+		if err != nil {
+			return err
+		}
+		p.tcpListener = TCPlistener
+		errors.LogInfo(context.Background(), "Metrics server listening on ", p.listen)
+
+		go func() {
+			if err := http.Serve(TCPlistener, http.DefaultServeMux); err != nil {
+				errors.LogErrorInner(context.Background(), err, "failed to start metrics server")
+			}
+		}()
+	}
+
 	listener := &OutboundListener{
 		buffer: make(chan net.Conn, 4),
 		done:   done.New(),

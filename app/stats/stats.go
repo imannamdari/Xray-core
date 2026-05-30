@@ -1,29 +1,29 @@
 package stats
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
-
 import (
 	"context"
 	"sync"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/features/stats"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/features/stats"
 )
 
 // Manager is an implementation of stats.Manager.
 type Manager struct {
-	access   sync.RWMutex
-	counters map[string]*Counter
-	channels map[string]*Channel
-	running  bool
+	access     sync.RWMutex
+	counters   map[string]*Counter
+	onlineMaps map[string]*OnlineMap
+	channels   map[string]*Channel
+	running    bool
 }
 
 // NewManager creates an instance of Statistics Manager.
 func NewManager(ctx context.Context, config *Config) (*Manager, error) {
 	m := &Manager{
-		counters: make(map[string]*Counter),
-		channels: make(map[string]*Channel),
+		counters:   make(map[string]*Counter),
+		onlineMaps: make(map[string]*OnlineMap),
+		channels:   make(map[string]*Channel),
 	}
 
 	return m, nil
@@ -83,6 +83,55 @@ func (m *Manager) VisitCounters(visitor func(string, stats.Counter) bool) {
 	}
 }
 
+// RegisterOnlineMap implements stats.Manager.
+func (m *Manager) RegisterOnlineMap(name string) (stats.OnlineMap, error) {
+	m.access.Lock()
+	defer m.access.Unlock()
+
+	if _, found := m.onlineMaps[name]; found {
+		return nil, errors.New("OnlineMap ", name, " already registered.")
+	}
+	errors.LogDebug(context.Background(), "create new OnlineMap ", name)
+	om := NewOnlineMap()
+	m.onlineMaps[name] = om
+	return om, nil
+}
+
+// UnregisterOnlineMap implements stats.Manager.
+func (m *Manager) UnregisterOnlineMap(name string) error {
+	m.access.Lock()
+	defer m.access.Unlock()
+
+	if _, found := m.onlineMaps[name]; found {
+		errors.LogDebug(context.Background(), "remove OnlineMap ", name)
+		delete(m.onlineMaps, name)
+	}
+	return nil
+}
+
+// GetOnlineMap implements stats.Manager.
+func (m *Manager) GetOnlineMap(name string) stats.OnlineMap {
+	m.access.RLock()
+	defer m.access.RUnlock()
+
+	if om, found := m.onlineMaps[name]; found {
+		return om
+	}
+	return nil
+}
+
+// VisitOnlineMaps calls visitor function on all managed online maps.
+// The visitor runs under a read lock; it must not call RegisterOnlineMap or UnregisterOnlineMap (would deadlock).
+func (m *Manager) VisitOnlineMaps(visitor func(string, stats.OnlineMap) bool) {
+	m.access.RLock()
+	defer m.access.RUnlock()
+	for name, om := range m.onlineMaps {
+		if !visitor(name, om) {
+			break
+		}
+	}
+}
+
 // RegisterChannel implements stats.Manager.
 func (m *Manager) RegisterChannel(name string) (stats.Channel, error) {
 	m.access.Lock()
@@ -124,6 +173,21 @@ func (m *Manager) GetChannel(name string) stats.Channel {
 	return nil
 }
 
+// GetAllOnlineUsers implements stats.Manager.
+func (m *Manager) GetAllOnlineUsers() []string {
+	m.access.RLock()
+	defer m.access.RUnlock()
+
+	usersOnline := make([]string, 0, len(m.onlineMaps))
+	for user, om := range m.onlineMaps {
+		if om.Count() > 0 {
+			usersOnline = append(usersOnline, user)
+		}
+	}
+
+	return usersOnline
+}
+
 // Start implements common.Runnable.
 func (m *Manager) Start() error {
 	m.access.Lock()
@@ -146,6 +210,10 @@ func (m *Manager) Close() error {
 	m.access.Lock()
 	defer m.access.Unlock()
 	m.running = false
+	for name := range m.onlineMaps {
+		errors.LogDebug(context.Background(), "remove OnlineMap ", name)
+		delete(m.onlineMaps, name)
+	}
 	errs := []error{}
 	for name, channel := range m.channels {
 		errors.LogDebug(context.Background(), "remove channel ", name)

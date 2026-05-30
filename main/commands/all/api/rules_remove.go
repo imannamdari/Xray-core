@@ -3,23 +3,28 @@ package api
 import (
 	"fmt"
 
-	routerService "github.com/imannamdari/xray-core/app/router/command"
-	"github.com/imannamdari/xray-core/main/commands/base"
+	routerService "github.com/xtls/xray-core/app/router/command"
+	"github.com/xtls/xray-core/main/commands/base"
 )
 
 var cmdRemoveRules = &base.Command{
 	CustomFlags: true,
-	UsageLine:   "{{.Exec}} api rmrules [--server=127.0.0.1:8080] ruleTag1 ruleTag2...",
+	UsageLine:   "{{.Exec}} api rmrules [--server=127.0.0.1:8080] [ruleTag]...",
 	Short:       "Remove routing rules by ruleTag",
 	Long: `
 Remove routing rules by ruleTag from Xray.
+
 Arguments:
-	-s, -server 
+
+	-s, -server <server:port>
 		The API server address. Default 127.0.0.1:8080
-	-t, -timeout
-		Timeout seconds to call API. Default 3
+
+	-t, -timeout <seconds>
+		Timeout in seconds for calling API. Default 3
+
 Example:
-    {{.Exec}} {{.LongName}} --server=127.0.0.1:8080 ruleTag1 ruleTag2
+
+	{{.Exec}} {{.LongName}} --server=127.0.0.1:8080 ruleTag1 ruleTag2
 `,
 	Run: executeRemoveRules,
 }
@@ -51,5 +56,4 @@ func executeRemoveRules(cmd *base.Command, args []string) {
 		}
 		showJSONResponse(resp)
 	}
-
 }

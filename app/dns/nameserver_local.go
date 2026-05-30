@@ -2,14 +2,13 @@ package dns
 
 import (
 	"context"
-	"strings"
 	"time"
 
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/features/dns"
-	"github.com/imannamdari/xray-core/features/dns/localdns"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/features/dns"
+	"github.com/xtls/xray-core/features/dns/localdns"
 )
 
 // LocalNameServer is an wrapper over local DNS feature.
@@ -17,16 +16,10 @@ type LocalNameServer struct {
 	client *localdns.Client
 }
 
-const errEmptyResponse = "No address associated with hostname"
-
 // QueryIP implements Server.
-func (s *LocalNameServer) QueryIP(ctx context.Context, domain string, _ net.IP, option dns.IPOption, _ bool) (ips []net.IP, err error) {
+func (s *LocalNameServer) QueryIP(ctx context.Context, domain string, option dns.IPOption) (ips []net.IP, ttl uint32, err error) {
 	start := time.Now()
-	ips, err = s.client.LookupIP(domain, option)
-
-	if err != nil && strings.HasSuffix(err.Error(), errEmptyResponse) {
-		err = dns.ErrEmptyResponse
-	}
+	ips, ttl, err = s.client.LookupIP(domain, option)
 
 	if len(ips) > 0 {
 		errors.LogInfo(ctx, "Localhost got answer: ", domain, " -> ", ips)
@@ -41,6 +34,11 @@ func (s *LocalNameServer) Name() string {
 	return "localhost"
 }
 
+// IsDisableCache implements Server.
+func (s *LocalNameServer) IsDisableCache() bool {
+	return true
+}
+
 // NewLocalNameServer creates localdns server object for directly lookup in system DNS.
 func NewLocalNameServer() *LocalNameServer {
 	errors.LogInfo(context.Background(), "DNS: created localhost client")
@@ -50,6 +48,6 @@ func NewLocalNameServer() *LocalNameServer {
 }
 
 // NewLocalDNSClient creates localdns client object for directly lookup in system DNS.
-func NewLocalDNSClient() *Client {
-	return &Client{server: NewLocalNameServer()}
+func NewLocalDNSClient(ipOption dns.IPOption) *Client {
+	return &Client{server: NewLocalNameServer(), ipOption: &ipOption}
 }

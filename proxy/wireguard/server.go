@@ -2,22 +2,19 @@ package wireguard
 
 import (
 	"context"
-	goerrors "errors"
-	"io"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/common/signal"
-	"github.com/imannamdari/xray-core/common/task"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/dns"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/features/routing"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/common/buf"
+	c "github.com/xtls/xray-core/common/ctx"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/dns"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/features/routing"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/internet/stat"
 )
 
 var nullDestination = net.TCPDestination(net.AnyIP, 0)
@@ -30,11 +27,10 @@ type Server struct {
 }
 
 type routingInfo struct {
-	ctx         context.Context
-	dispatcher  routing.Dispatcher
-	inboundTag  *session.Inbound
-	outboundTag *session.Outbound
-	contentTag  *session.Content
+	ctx        context.Context
+	dispatcher routing.Dispatcher
+	inboundTag *session.Inbound
+	contentTag *session.Content
 }
 
 func NewServer(ctx context.Context, conf *DeviceConfig) (*Server, error) {
@@ -53,6 +49,8 @@ func NewServer(ctx context.Context, conf *DeviceConfig) (*Server, error) {
 					IPv4Enable: hasIPv4,
 					IPv6Enable: hasIPv6,
 				},
+				workers:   int(conf.NumWorkers),
+				readQueue: make(chan *netReadInfo),
 			},
 		},
 		policyManager: v.GetFeature(policy.ManagerType()).(policy.Manager),
@@ -78,18 +76,11 @@ func (*Server) Network() []net.Network {
 
 // Process implements proxy.Inbound.
 func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Connection, dispatcher routing.Dispatcher) error {
-	inbound := session.InboundFromContext(ctx)
-	inbound.Name = "wireguard"
-	inbound.CanSpliceCopy = 3
-	outbounds := session.OutboundsFromContext(ctx)
-	ob := outbounds[len(outbounds)-1]
-
 	s.info = routingInfo{
-		ctx:         core.ToBackgroundDetachedContext(ctx),
-		dispatcher:  dispatcher,
-		inboundTag:  session.InboundFromContext(ctx),
-		outboundTag: ob,
-		contentTag:  session.ContentFromContext(ctx),
+		ctx:        ctx,
+		dispatcher: dispatcher,
+		inboundTag: session.InboundFromContext(ctx),
+		contentTag: session.ContentFromContext(ctx),
 	}
 
 	ep, err := s.bindServer.ParseEndpoint(conn.RemoteAddr().String())
@@ -102,25 +93,31 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn stat.Con
 
 	reader := buf.NewPacketReader(conn)
 	for {
-		mpayload, err := reader.ReadMultiBuffer()
+		mb, err := reader.ReadMultiBuffer()
 		if err != nil {
+			nep.conn = nil
+			buf.ReleaseMulti(mb)
 			return err
 		}
 
-		for _, payload := range mpayload {
-			v, ok := <-s.bindServer.readQueue
-			if !ok {
-				return nil
-			}
-			i, err := payload.Read(v.buff)
+		for i, b := range mb {
 
-			v.bytes = i
-			v.endpoint = nep
-			v.err = err
-			v.waiter.Done()
-			if err != nil && goerrors.Is(err, io.EOF) {
+			rawBytes := b.Bytes()
+			if b.Len() > 3 {
+				rawBytes[1] = 0
+				rawBytes[2] = 0
+				rawBytes[3] = 0
+			}
+
+			select {
+			case s.bindServer.readQueue <- &netReadInfo{
+				buff:     b,
+				endpoint: nep,
+			}:
+			case <-s.bindServer.closedCh:
 				nep.conn = nil
-				return nil
+				buf.ReleaseMulti(mb[i:])
+				return errors.New("bind closed")
 			}
 		}
 	}
@@ -131,11 +128,28 @@ func (s *Server) forwardConnection(dest net.Destination, conn net.Conn) {
 		errors.LogError(s.info.ctx, "unexpected: dispatcher == nil")
 		return
 	}
-	defer conn.Close()
 
 	ctx, cancel := context.WithCancel(core.ToBackgroundDetachedContext(s.info.ctx))
-	plcy := s.policyManager.ForLevel(0)
-	timer := signal.CancelAfterInactivity(ctx, cancel, plcy.Timeouts.ConnectionIdle)
+	sid := session.NewID()
+	ctx = c.ContextWithID(ctx, sid)
+	inbound := session.Inbound{} // since promiscuousModeHandler mixed-up context, we shallow copy inbound (tag) and content (configs)
+	if s.info.inboundTag != nil {
+		inbound = *s.info.inboundTag
+	}
+	inbound.Name = "wireguard"
+	inbound.CanSpliceCopy = 3
+
+	// overwrite the source to use the tun address for each sub context.
+	// Since gvisor.ForwarderRequest doesn't provide any info to associate the sub-context with the Parent context
+	// Currently we have no way to link to the original source address
+	inbound.Source = net.DestinationFromAddr(conn.RemoteAddr())
+	ctx = session.ContextWithInbound(ctx, &inbound)
+	content := new(session.Content)
+	if s.info.contentTag != nil {
+		content.SniffingRequest = s.info.contentTag.SniffingRequest
+	}
+	ctx = session.ContextWithContent(ctx, content)
+	ctx = session.SubContextFromMuxInbound(ctx)
 
 	ctx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
 		From:   nullDestination,
@@ -144,45 +158,14 @@ func (s *Server) forwardConnection(dest net.Destination, conn net.Conn) {
 		Reason: "",
 	})
 
-	if s.info.inboundTag != nil {
-		ctx = session.ContextWithInbound(ctx, s.info.inboundTag)
-	}
-	if s.info.outboundTag != nil {
-		ctx = session.ContextWithOutbounds(ctx, []*session.Outbound{s.info.outboundTag})
-	}
-	if s.info.contentTag != nil {
-		ctx = session.ContextWithContent(ctx, s.info.contentTag)
-	}
-
-	link, err := s.info.dispatcher.Dispatch(ctx, dest)
+	err := s.info.dispatcher.DispatchLink(ctx, dest, &transport.Link{
+		Reader: buf.NewReader(conn),
+		Writer: buf.NewWriter(conn),
+	})
 	if err != nil {
-		errors.LogErrorInner(s.info.ctx, err, "dispatch connection")
-	}
-	defer cancel()
-
-	requestDone := func() error {
-		defer timer.SetTimeout(plcy.Timeouts.DownlinkOnly)
-		if err := buf.Copy(buf.NewReader(conn), link.Writer, buf.UpdateActivity(timer)); err != nil {
-			return errors.New("failed to transport all TCP request").Base(err)
-		}
-
-		return nil
+		errors.LogInfoInner(ctx, err, "connection ends")
 	}
 
-	responseDone := func() error {
-		defer timer.SetTimeout(plcy.Timeouts.UplinkOnly)
-		if err := buf.Copy(link.Reader, buf.NewWriter(conn), buf.UpdateActivity(timer)); err != nil {
-			return errors.New("failed to transport all TCP response").Base(err)
-		}
-
-		return nil
-	}
-
-	requestDonePost := task.OnSuccess(requestDone, task.Close(link.Writer))
-	if err := task.Run(ctx, requestDonePost, responseDone); err != nil {
-		common.Interrupt(link.Reader)
-		common.Interrupt(link.Writer)
-		errors.LogDebugInner(s.info.ctx, err, "connection ends")
-		return
-	}
+	cancel()
+	conn.Close()
 }

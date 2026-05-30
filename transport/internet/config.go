@@ -1,15 +1,14 @@
 package internet
 
 import (
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/serial"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/serial"
 )
 
 type ConfigCreator func() interface{}
 
-var (
-	globalTransportConfigCreatorCache = make(map[string]ConfigCreator)
-)
+var globalTransportConfigCreatorCache = make(map[string]ConfigCreator)
 
 var strategy = [][]byte{
 	//              name        strategy,   prefer, fallback
@@ -27,25 +26,6 @@ var strategy = [][]byte{
 }
 
 const unknownProtocol = "unknown"
-
-func transportProtocolToString(protocol TransportProtocol) string {
-	switch protocol {
-	case TransportProtocol_TCP:
-		return "tcp"
-	case TransportProtocol_UDP:
-		return "udp"
-	case TransportProtocol_HTTP:
-		return "http"
-	case TransportProtocol_MKCP:
-		return "mkcp"
-	case TransportProtocol_WebSocket:
-		return "websocket"
-	case TransportProtocol_HTTPUpgrade:
-		return "httpupgrade"
-	default:
-		return unknownProtocol
-	}
-}
 
 func RegisterProtocolConfigCreator(name string, creator ConfigCreator) error {
 	if _, found := globalTransportConfigCreatorCache[name]; found {
@@ -70,23 +50,15 @@ func (c *TransportConfig) GetTypedSettings() (interface{}, error) {
 }
 
 func (c *TransportConfig) GetUnifiedProtocolName() string {
-	if len(c.ProtocolName) > 0 {
-		return c.ProtocolName
-	}
-
-	return transportProtocolToString(c.Protocol)
+	return c.ProtocolName
 }
 
 func (c *StreamConfig) GetEffectiveProtocol() string {
-	if c == nil {
+	if c == nil || len(c.ProtocolName) == 0 {
 		return "tcp"
 	}
 
-	if len(c.ProtocolName) > 0 {
-		return c.ProtocolName
-	}
-
-	return transportProtocolToString(c.Protocol)
+	return c.ProtocolName
 }
 
 func (c *StreamConfig) GetEffectiveTransportSettings() (interface{}, error) {
@@ -116,7 +88,7 @@ func (c *StreamConfig) GetEffectiveSecuritySettings() (interface{}, error) {
 }
 
 func (c *StreamConfig) HasSecuritySettings() bool {
-	return len(c.SecurityType) > 0
+	return len(c.SecuritySettings) > 0
 }
 
 func (c *ProxyConfig) HasTag() bool {
@@ -127,30 +99,52 @@ func (m SocketConfig_TProxyMode) IsEnabled() bool {
 	return m != SocketConfig_Off
 }
 
-func (s DomainStrategy) hasStrategy() bool {
+func (s DomainStrategy) HasStrategy() bool {
 	return strategy[s][0] != 0
 }
 
-func (s DomainStrategy) forceIP() bool {
+func (s DomainStrategy) ForceIP() bool {
 	return strategy[s][0] == 2
 }
 
-func (s DomainStrategy) preferIP4() bool {
+func (s DomainStrategy) PreferIP4() bool {
 	return strategy[s][1] == 4 || strategy[s][1] == 0
 }
 
-func (s DomainStrategy) preferIP6() bool {
+func (s DomainStrategy) PreferIP6() bool {
 	return strategy[s][1] == 6 || strategy[s][1] == 0
 }
 
-func (s DomainStrategy) hasFallback() bool {
+func (s DomainStrategy) HasFallback() bool {
 	return strategy[s][2] != 0
 }
 
-func (s DomainStrategy) fallbackIP4() bool {
+func (s DomainStrategy) FallbackIP4() bool {
 	return strategy[s][2] == 4
 }
 
-func (s DomainStrategy) fallbackIP6() bool {
+func (s DomainStrategy) FallbackIP6() bool {
 	return strategy[s][2] == 6
+}
+
+func (s DomainStrategy) GetDynamicStrategy(addrFamily net.AddressFamily) DomainStrategy {
+	if addrFamily.IsDomain() {
+		return s
+	}
+	switch s {
+	case DomainStrategy_USE_IP:
+		if addrFamily.IsIPv4() {
+			return DomainStrategy_USE_IP46
+		} else if addrFamily.IsIPv6() {
+			return DomainStrategy_USE_IP64
+		}
+	case DomainStrategy_FORCE_IP:
+		if addrFamily.IsIPv4() {
+			return DomainStrategy_FORCE_IP46
+		} else if addrFamily.IsIPv6() {
+			return DomainStrategy_FORCE_IP64
+		}
+	default:
+	}
+	return s
 }

@@ -1,20 +1,26 @@
 package conf
 
 import (
-	"github.com/imannamdari/xray-core/app/metrics"
-	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/xtls/xray-core/app/metrics"
+	"github.com/xtls/xray-core/common/errors"
 )
 
 type MetricsConfig struct {
-	Tag string `json:"tag"`
+	Tag    string `json:"tag"`
+	Listen string `json:"listen"`
 }
 
 func (c *MetricsConfig) Build() (*metrics.Config, error) {
+	if c.Listen == "" && c.Tag == "" {
+		return nil, errors.New("Metrics must have a tag or listen address.")
+	}
+	// If the tag is empty but have "listen" set a default "Metrics" for compatibility.
 	if c.Tag == "" {
-		return nil, errors.New("metrics tag can't be empty.")
+		c.Tag = "Metrics"
 	}
 
 	return &metrics.Config{
-		Tag: c.Tag,
+		Tag:    c.Tag,
+		Listen: c.Listen,
 	}, nil
 }

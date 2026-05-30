@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/reality"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
 	goreality "github.com/xtls/reality"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/reality"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
 )
 
 // Listener is an internet.Listener that listens for TCP connections.
@@ -42,6 +42,9 @@ func ListenTCP(ctx context.Context, address net.Address, port net.Port, streamSe
 	var listener net.Listener
 	var err error
 	if port == net.Port(0) { // unix
+		if !address.Family().IsDomain() {
+			return nil, errors.New("invalid unix listen: ", address).AtError()
+		}
 		listener, err = internet.ListenSystem(ctx, &net.UnixAddr{
 			Name: address.Domain(),
 			Net:  "unix",
@@ -61,6 +64,10 @@ func ListenTCP(ctx context.Context, address net.Address, port net.Port, streamSe
 		errors.LogInfo(ctx, "listening TCP on ", address, ":", port)
 	}
 
+	if streamSettings.TcpmaskManager != nil {
+		listener, _ = streamSettings.TcpmaskManager.WrapListener(listener)
+	}
+
 	if streamSettings.SocketSettings != nil && streamSettings.SocketSettings.AcceptProxyProtocol {
 		errors.LogWarning(ctx, "accepting PROXY protocol")
 	}
@@ -72,6 +79,7 @@ func ListenTCP(ctx context.Context, address net.Address, port net.Port, streamSe
 	}
 	if config := reality.ConfigFromStreamSettings(streamSettings); config != nil {
 		l.realityConfig = config.GetREALITYConfig()
+		go goreality.DetectPostHandshakeRecordsLens(l.realityConfig)
 	}
 
 	if tcpSettings.HeaderSettings != nil {
@@ -104,6 +112,7 @@ func (v *Listener) keepAccepting() {
 			}
 			continue
 		}
+
 		go func() {
 			if v.tlsConfig != nil {
 				conn = tls.Server(conn, v.tlsConfig)

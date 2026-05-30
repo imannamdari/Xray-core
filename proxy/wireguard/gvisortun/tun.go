@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"sync"
 	"syscall"
 
 	"golang.zx2c4.com/wireguard/tun"
@@ -30,9 +31,11 @@ type netTun struct {
 	ep             *channel.Endpoint
 	stack          *stack.Stack
 	events         chan tun.Event
+	notifyHandle   *channel.NotificationHandle
 	incomingPacket chan *buffer.View
 	mtu            int
 	hasV4, hasV6   bool
+	closeOnce      sync.Once
 }
 
 type Net netTun
@@ -46,12 +49,17 @@ func CreateNetTUN(localAddresses []netip.Addr, mtu int, promiscuousMode bool) (t
 	dev := &netTun{
 		ep:             channel.New(1024, uint32(mtu), ""),
 		stack:          stack.New(opts),
-		events:         make(chan tun.Event, 1),
+		events:         make(chan tun.Event, 10),
 		incomingPacket: make(chan *buffer.View),
 		mtu:            mtu,
 	}
-	dev.ep.AddNotify(dev)
-	tcpipErr := dev.stack.CreateNIC(1, dev.ep)
+	sackEnabledOpt := tcpip.TCPSACKEnabled(true) // TCP SACK is disabled by default
+	tcpipErr := dev.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &sackEnabledOpt)
+	if tcpipErr != nil {
+		return nil, nil, dev.stack, fmt.Errorf("could not enable TCP SACK: %v", tcpipErr)
+	}
+	dev.notifyHandle = dev.ep.AddNotify(dev)
+	tcpipErr = dev.stack.CreateNIC(1, dev.ep)
 	if tcpipErr != nil {
 		return nil, nil, dev.stack, fmt.Errorf("CreateNIC: %v", tcpipErr)
 	}
@@ -88,18 +96,8 @@ func CreateNetTUN(localAddresses []netip.Addr, mtu int, promiscuousMode bool) (t
 		dev.stack.SetSpoofing(1, true)
 	}
 
-	opt := tcpip.CongestionControlOption("cubic")
-	if err := dev.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &opt); err != nil {
-		return nil, nil, dev.stack, fmt.Errorf("SetTransportProtocolOption(%d, &%T(%s)): %s", tcp.ProtocolNumber, opt, opt, err)
-	}
-
 	dev.events <- tun.EventUp
 	return dev, (*Net)(dev), dev.stack, nil
-}
-
-// BatchSize implements tun.Device
-func (tun *netTun) BatchSize() int {
-	return 1
 }
 
 // Name implements tun.Device
@@ -118,7 +116,6 @@ func (tun *netTun) Events() <-chan tun.Event {
 }
 
 // Read implements tun.Device
-
 func (tun *netTun) Read(buf [][]byte, sizes []int, offset int) (int, error) {
 	view, ok := <-tun.incomingPacket
 	if !ok {
@@ -157,7 +154,7 @@ func (tun *netTun) Write(buf [][]byte, offset int) (int, error) {
 // WriteNotify implements channel.Notification
 func (tun *netTun) WriteNotify() {
 	pkt := tun.ep.Read()
-	if pkt.IsNil() {
+	if pkt == nil {
 		return
 	}
 
@@ -167,31 +164,29 @@ func (tun *netTun) WriteNotify() {
 	tun.incomingPacket <- view
 }
 
-// Flush  implements tun.Device
-func (tun *netTun) Flush() error {
-	return nil
-}
-
 // Close implements tun.Device
 func (tun *netTun) Close() error {
-	tun.stack.RemoveNIC(1)
+	tun.closeOnce.Do(func() {
+		tun.stack.RemoveNIC(1)
+		tun.stack.Close()
+		tun.ep.RemoveNotify(tun.notifyHandle)
+		tun.ep.Close()
 
-	if tun.events != nil {
 		close(tun.events)
-	}
 
-	tun.ep.Close()
-
-	if tun.incomingPacket != nil {
 		close(tun.incomingPacket)
-	}
-
+	})
 	return nil
 }
 
 // MTU  implements tun.Device
 func (tun *netTun) MTU() (int, error) {
 	return tun.mtu, nil
+}
+
+// BatchSize implements tun.Device
+func (tun *netTun) BatchSize() int {
+	return 1
 }
 
 func convertToFullAddr(endpoint netip.AddrPort) (tcpip.FullAddress, tcpip.NetworkProtocolNumber) {
@@ -225,6 +220,7 @@ func (net *Net) DialUDPAddrPort(laddr, raddr netip.AddrPort) (*gonet.UDPConn, er
 		var addr tcpip.FullAddress
 		addr, pn = convertToFullAddr(raddr)
 		rfa = &addr
+		rfa = nil // do not ep connect
 	}
 	return gonet.DialUDP(net.stack, lfa, rfa, pn)
 }

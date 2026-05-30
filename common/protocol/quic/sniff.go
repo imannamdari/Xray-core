@@ -7,12 +7,12 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/bytespool"
-	"github.com/imannamdari/xray-core/common/errors"
-	ptls "github.com/imannamdari/xray-core/common/protocol/tls"
-	"github.com/quic-go/quic-go/quicvarint"
+	"github.com/apernet/quic-go/quicvarint"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/protocol"
+	ptls "github.com/xtls/xray-core/common/protocol/tls"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -47,10 +47,16 @@ var (
 )
 
 func SniffQUIC(b []byte) (*SniffHeader, error) {
+	if len(b) == 0 {
+		return nil, common.ErrNoClue
+	}
+
 	// Crypto data separated across packets
-	cryptoLen := 0
-	cryptoData := bytespool.Alloc(int32(len(b)))
-	defer bytespool.Free(cryptoData)
+	cryptoLen := int32(0)
+	cryptoDataBuf := buf.NewWithSize(32767)
+	defer cryptoDataBuf.Release()
+	cache := buf.New()
+	defer cache.Release()
 
 	// Parse QUIC packets
 	for len(b) > 0 {
@@ -93,17 +99,23 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 			return nil, errNotQuic
 		}
 
-		tokenLen, err := quicvarint.Read(buffer)
-		if err != nil || tokenLen > uint64(len(b)) {
-			return nil, errNotQuic
+		if isQuicInitial { // Only initial packets have token, see https://datatracker.ietf.org/doc/html/rfc9000#section-17.2.2
+			tokenLen, err := readShortQuicVarint(buffer)
+			if err != nil || tokenLen > int32(len(b)) {
+				return nil, errNotQuic
+			}
+
+			if _, err = buffer.ReadBytes(tokenLen); err != nil {
+				return nil, errNotQuic
+			}
 		}
 
-		if _, err = buffer.ReadBytes(int32(tokenLen)); err != nil {
-			return nil, errNotQuic
-		}
-
-		packetLen, err := quicvarint.Read(buffer)
+		packetLen, err := readShortQuicVarint(buffer)
 		if err != nil {
+			return nil, errNotQuic
+		}
+		// packetLen is impossible to be shorter than this
+		if packetLen < 4 {
 			return nil, errNotQuic
 		}
 
@@ -117,9 +129,6 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 			b = restPayload
 			continue
 		}
-
-		origPNBytes := make([]byte, 4)
-		copy(origPNBytes, b[hdrLen:hdrLen+4])
 
 		var salt []byte
 		if versionNumber == version1 {
@@ -135,44 +144,34 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 			return nil, err
 		}
 
-		cache := buf.New()
-		defer cache.Release()
-
+		cache.Clear()
 		mask := cache.Extend(int32(block.BlockSize()))
-		block.Encrypt(mask, b[hdrLen+4:hdrLen+4+16])
+		block.Encrypt(mask, b[hdrLen+4:hdrLen+4+len(mask)])
 		b[0] ^= mask[0] & 0xf
-		for i := range b[hdrLen : hdrLen+4] {
+		packetNumberLength := int(b[0]&0x3 + 1)
+		for i := range packetNumberLength {
 			b[hdrLen+i] ^= mask[i+1]
 		}
-		packetNumberLength := b[0]&0x3 + 1
-		if packetNumberLength != 1 {
-			return nil, errNotQuicInitial
-		}
-		var packetNumber uint32
-		{
-			n, err := buffer.ReadByte()
-			if err != nil {
-				return nil, err
-			}
-			packetNumber = uint32(n)
-		}
-
-		extHdrLen := hdrLen + int(packetNumberLength)
-		copy(b[extHdrLen:hdrLen+4], origPNBytes[packetNumberLength:])
-		data := b[extHdrLen : int(packetLen)+hdrLen]
 
 		key := hkdfExpandLabel(crypto.SHA256, secret, []byte{}, "quic key", 16)
 		iv := hkdfExpandLabel(crypto.SHA256, secret, []byte{}, "quic iv", 12)
 		cipher := AEADAESGCMTLS13(key, iv)
+
 		nonce := cache.Extend(int32(cipher.NonceSize()))
-		binary.BigEndian.PutUint64(nonce[len(nonce)-8:], uint64(packetNumber))
+		_, err = buffer.Read(nonce[len(nonce)-packetNumberLength:])
+		if err != nil {
+			return nil, err
+		}
+
+		extHdrLen := hdrLen + packetNumberLength
+		data := b[extHdrLen : int(packetLen)+hdrLen]
 		decrypted, err := cipher.Open(b[extHdrLen:extHdrLen], nonce, data, b[:extHdrLen])
 		if err != nil {
 			return nil, err
 		}
 		buffer = buf.FromBytes(decrypted)
-		for i := 0; !buffer.IsEmpty(); i++ {
-			frameType := byte(0x0) // Default to PADDING frame
+		for !buffer.IsEmpty() {
+			frameType, _ := buffer.ReadByte()
 			for frameType == 0x0 && !buffer.IsEmpty() {
 				frameType, _ = buffer.ReadByte()
 			}
@@ -180,67 +179,66 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 			case 0x00: // PADDING frame
 			case 0x01: // PING frame
 			case 0x02, 0x03: // ACK frame
-				if _, err = quicvarint.Read(buffer); err != nil { // Field: Largest Acknowledged
+				if _, err = readShortQuicVarint(buffer); err != nil { // Field: Largest Acknowledged
 					return nil, io.ErrUnexpectedEOF
 				}
-				if _, err = quicvarint.Read(buffer); err != nil { // Field: ACK Delay
+				if _, err = readShortQuicVarint(buffer); err != nil { // Field: ACK Delay
 					return nil, io.ErrUnexpectedEOF
 				}
-				ackRangeCount, err := quicvarint.Read(buffer) // Field: ACK Range Count
+				ackRangeCount, err := readShortQuicVarint(buffer) // Field: ACK Range Count
 				if err != nil {
 					return nil, io.ErrUnexpectedEOF
 				}
-				if _, err = quicvarint.Read(buffer); err != nil { // Field: First ACK Range
+				if _, err = readShortQuicVarint(buffer); err != nil { // Field: First ACK Range
 					return nil, io.ErrUnexpectedEOF
 				}
 				for i := 0; i < int(ackRangeCount); i++ { // Field: ACK Range
-					if _, err = quicvarint.Read(buffer); err != nil { // Field: ACK Range -> Gap
+					if _, err = readShortQuicVarint(buffer); err != nil { // Field: ACK Range -> Gap
 						return nil, io.ErrUnexpectedEOF
 					}
-					if _, err = quicvarint.Read(buffer); err != nil { // Field: ACK Range -> ACK Range Length
+					if _, err = readShortQuicVarint(buffer); err != nil { // Field: ACK Range -> ACK Range Length
 						return nil, io.ErrUnexpectedEOF
 					}
 				}
 				if frameType == 0x03 {
-					if _, err = quicvarint.Read(buffer); err != nil { // Field: ECN Counts -> ECT0 Count
+					if _, err = readShortQuicVarint(buffer); err != nil { // Field: ECN Counts -> ECT0 Count
 						return nil, io.ErrUnexpectedEOF
 					}
-					if _, err = quicvarint.Read(buffer); err != nil { // Field: ECN Counts -> ECT1 Count
+					if _, err = readShortQuicVarint(buffer); err != nil { // Field: ECN Counts -> ECT1 Count
 						return nil, io.ErrUnexpectedEOF
 					}
-					if _, err = quicvarint.Read(buffer); err != nil { //nolint:misspell // Field: ECN Counts -> ECT-CE Count
+					if _, err = readShortQuicVarint(buffer); err != nil { //nolint:misspell // Field: ECN Counts -> ECT-CE Count
 						return nil, io.ErrUnexpectedEOF
 					}
 				}
 			case 0x06: // CRYPTO frame, we will use this frame
-				offset, err := quicvarint.Read(buffer) // Field: Offset
+				offset, err := readShortQuicVarint(buffer) // Field: Offset
 				if err != nil {
 					return nil, io.ErrUnexpectedEOF
 				}
-				length, err := quicvarint.Read(buffer) // Field: Length
-				if err != nil || length > uint64(buffer.Len()) {
+				length, err := readShortQuicVarint(buffer) // Field: Length
+				if err != nil || length > buffer.Len() {
 					return nil, io.ErrUnexpectedEOF
 				}
-				if cryptoLen < int(offset+length) {
-					cryptoLen = int(offset + length)
-					if len(cryptoData) < cryptoLen {
-						newCryptoData := bytespool.Alloc(int32(cryptoLen))
-						copy(newCryptoData, cryptoData)
-						bytespool.Free(cryptoData)
-						cryptoData = newCryptoData
+				currentCryptoLen := int32(offset + length)
+				if cryptoLen < currentCryptoLen {
+					if cryptoDataBuf.Cap() < currentCryptoLen {
+						return nil, io.ErrShortBuffer
 					}
+					cryptoDataBuf.Extend(currentCryptoLen - cryptoLen)
+					cryptoLen = currentCryptoLen
 				}
-				if _, err := buffer.Read(cryptoData[offset : offset+length]); err != nil { // Field: Crypto Data
+				if _, err := buffer.Read(cryptoDataBuf.BytesRange(offset, currentCryptoLen)); err != nil { // Field: Crypto Data
 					return nil, io.ErrUnexpectedEOF
 				}
 			case 0x1c: // CONNECTION_CLOSE frame, only 0x1c is permitted in initial packet
-				if _, err = quicvarint.Read(buffer); err != nil { // Field: Error Code
+				if _, err = readShortQuicVarint(buffer); err != nil { // Field: Error Code
 					return nil, io.ErrUnexpectedEOF
 				}
-				if _, err = quicvarint.Read(buffer); err != nil { // Field: Frame Type
+				if _, err = readShortQuicVarint(buffer); err != nil { // Field: Frame Type
 					return nil, io.ErrUnexpectedEOF
 				}
-				length, err := quicvarint.Read(buffer) // Field: Reason Phrase Length
+				length, err := readShortQuicVarint(buffer) // Field: Reason Phrase Length
 				if err != nil {
 					return nil, io.ErrUnexpectedEOF
 				}
@@ -255,7 +253,7 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 		}
 
 		tlsHdr := &ptls.SniffHeader{}
-		err = ptls.ReadClientHello(cryptoData[:cryptoLen], tlsHdr)
+		err = ptls.ReadClientHello(cryptoDataBuf.BytesRange(0, cryptoLen), tlsHdr)
 		if err != nil {
 			// The crypto data may have not been fully recovered in current packets,
 			// So we continue to sniff rest packets.
@@ -264,7 +262,8 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 		}
 		return &SniffHeader{domain: tlsHdr.Domain()}, nil
 	}
-	return nil, common.ErrNoClue
+	// All payload is parsed as valid QUIC packets, but we need more packets for crypto data to read client hello.
+	return nil, protocol.ErrProtoNeedMoreData
 }
 
 func hkdfExpandLabel(hash crypto.Hash, secret, context []byte, label string, length int) []byte {
@@ -283,4 +282,19 @@ func hkdfExpandLabel(hash crypto.Hash, secret, context []byte, label string, len
 		panic("quic: HKDF-Expand-Label invocation failed unexpectedly")
 	}
 	return out
+}
+
+// readShortQuicVarint wraps quicvarint.Read with a max limit for length related fields.
+// we only handle QUIC Initial so these numbers should not exceed 65535
+// returns int32 to reduce type conversion
+func readShortQuicVarint(reader io.ByteReader) (int32, error) {
+	v, err := quicvarint.Read(reader)
+	if err != nil {
+		return 0, err
+	}
+	if v > 65535 {
+		// not used(
+		return 0, errNotQuicInitial
+	}
+	return int32(v), nil
 }

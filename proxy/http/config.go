@@ -1,7 +1,9 @@
 package http
 
 import (
-	"github.com/imannamdari/xray-core/common/protocol"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/xtls/xray-core/common/protocol"
 )
 
 func (a *Account) Equals(another protocol.Account) bool {
@@ -9,6 +11,10 @@ func (a *Account) Equals(another protocol.Account) bool {
 		return a.Username == account.Username
 	}
 	return false
+}
+
+func (a *Account) ToProto() proto.Message {
+	return a
 }
 
 func (a *Account) AsAccount() (protocol.Account, error) {

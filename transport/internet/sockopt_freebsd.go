@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/errors"
 	"golang.org/x/sys/unix"
 )
 
@@ -220,32 +220,6 @@ func applyInboundSocketOptions(network string, fd uintptr, config *SocketConfig)
 	}
 
 	return nil
-}
-
-func bindAddr(fd uintptr, ip []byte, port uint32) error {
-	setReuseAddr(fd)
-	setReusePort(fd)
-
-	var sockaddr syscall.Sockaddr
-
-	switch len(ip) {
-	case net.IPv4len:
-		a4 := &syscall.SockaddrInet4{
-			Port: int(port),
-		}
-		copy(a4.Addr[:], ip)
-		sockaddr = a4
-	case net.IPv6len:
-		a6 := &syscall.SockaddrInet6{
-			Port: int(port),
-		}
-		copy(a6.Addr[:], ip)
-		sockaddr = a6
-	default:
-		return errors.New("unexpected length of ip")
-	}
-
-	return syscall.Bind(int(fd), sockaddr)
 }
 
 func setReuseAddr(fd uintptr) error {

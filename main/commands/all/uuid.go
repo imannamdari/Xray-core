@@ -3,15 +3,15 @@ package all
 import (
 	"fmt"
 
-	"github.com/imannamdari/xray-core/common/uuid"
-	"github.com/imannamdari/xray-core/main/commands/base"
+	"github.com/xtls/xray-core/common/uuid"
+	"github.com/xtls/xray-core/main/commands/base"
 )
 
 var cmdUUID = &base.Command{
 	UsageLine: `{{.Exec}} uuid [-i "example"]`,
-	Short:     `Generate UUIDv4 or UUIDv5`,
+	Short:     `Generate UUIDv4 or UUIDv5 (VLESS)`,
 	Long: `
-Generate UUIDv4 or UUIDv5.
+Generate UUIDv4 or UUIDv5 (VLESS).
 
 UUIDv4 (random): {{.Exec}} uuid
 

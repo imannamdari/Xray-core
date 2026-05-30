@@ -2,13 +2,14 @@ package core
 
 import (
 	"io"
+	"slices"
 	"strings"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/cmdarg"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/main/confloader"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/cmdarg"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/main/confloader"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -30,7 +31,7 @@ type ConfigLoader func(input interface{}) (*Config, error)
 // ConfigBuilder is a builder to build core.Config from filenames and formats
 type ConfigBuilder func(files []*ConfigSource) (*Config, error)
 
-// ConfigsMerger merge multiple json configs into on config
+// ConfigsMerger merges multiple json configs into a single one
 type ConfigsMerger func(files []*ConfigSource) (string, error)
 
 var (
@@ -63,15 +64,16 @@ func GetMergedConfig(args cmdarg.Arg) (string, error) {
 	var files []*ConfigSource
 	supported := []string{"json", "yaml", "toml"}
 	for _, file := range args {
-		format := getFormat(file)
-		for _, s := range supported {
-			if s == format {
-				files = append(files, &ConfigSource{
-					Name:   file,
-					Format: format,
-				})
-				break
-			}
+		format := "json"
+		if file != "stdin:" {
+			format = GetFormat(file)
+		}
+
+		if slices.Contains(supported, format) {
+			files = append(files, &ConfigSource{
+				Name:   file,
+				Format: format,
+			})
 		}
 	}
 	return ConfigMergedFormFiles(files)
@@ -100,7 +102,7 @@ func getExtension(filename string) string {
 	return filename[idx+1:]
 }
 
-func getFormat(filename string) string {
+func GetFormat(filename string) string {
 	return GetFormatByExtension(getExtension(filename))
 }
 
@@ -114,7 +116,7 @@ func LoadConfig(formatName string, input interface{}) (*Config, error) {
 
 			if formatName == "auto" {
 				if file != "stdin:" {
-					f = getFormat(file)
+					f = GetFormat(file)
 				} else {
 					f = "json"
 				}

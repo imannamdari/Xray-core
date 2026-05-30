@@ -7,12 +7,13 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/transport/internet"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/utils"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
 )
 
 type ConnRF struct {
@@ -51,11 +52,21 @@ func dialhttpUpgrade(ctx context.Context, dest net.Destination, streamSettings *
 		return nil, err
 	}
 
+	if streamSettings.TcpmaskManager != nil {
+		newConn, err := streamSettings.TcpmaskManager.WrapConnClient(pconn)
+		if err != nil {
+			pconn.Close()
+			return nil, errors.New("mask err").Base(err)
+		}
+		pconn = newConn
+	}
+
 	var conn net.Conn
 	var requestURL url.URL
-	if config := tls.ConfigFromStreamSettings(streamSettings); config != nil {
-		tlsConfig := config.GetTLSConfig(tls.WithDestination(dest), tls.WithNextProto("http/1.1"))
-		if fingerprint := tls.GetFingerprint(config.Fingerprint); fingerprint != nil {
+	tConfig := tls.ConfigFromStreamSettings(streamSettings)
+	if tConfig != nil {
+		tlsConfig := tConfig.GetTLSConfig(tls.WithDestination(dest), tls.WithNextProto("http/1.1"))
+		if fingerprint := tls.GetFingerprint(tConfig.Fingerprint); fingerprint != nil {
 			conn = tls.UClient(pconn, tlsConfig, fingerprint)
 			if err := conn.(*tls.UConn).WebsocketHandshakeContext(ctx); err != nil {
 				return nil, err
@@ -69,17 +80,23 @@ func dialhttpUpgrade(ctx context.Context, dest net.Destination, streamSettings *
 		requestURL.Scheme = "http"
 	}
 
-	requestURL.Host = dest.NetAddr()
+	requestURL.Host = transportConfiguration.Host
+	if requestURL.Host == "" && tConfig != nil {
+		requestURL.Host = tConfig.ServerName
+	}
+	if requestURL.Host == "" {
+		requestURL.Host = dest.Address.String()
+	}
 	requestURL.Path = transportConfiguration.GetNormalizedPath()
 	req := &http.Request{
 		Method: http.MethodGet,
 		URL:    &requestURL,
-		Host:   transportConfiguration.Host,
 		Header: make(http.Header),
 	}
 	for key, value := range transportConfiguration.Header {
 		AddHeader(req.Header, key, value)
 	}
+	utils.TryDefaultHeadersWith(req.Header, "ws")
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")
 

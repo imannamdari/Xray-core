@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol/tls/cert"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
-	"github.com/imannamdari/xray-core/transport/internet"
-	. "github.com/imannamdari/xray-core/transport/internet/httpupgrade"
-	"github.com/imannamdari/xray-core/transport/internet/stat"
-	"github.com/imannamdari/xray-core/transport/internet/tls"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol/tls/cert"
+	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/transport/internet"
+	. "github.com/xtls/xray-core/transport/internet/httpupgrade"
+	"github.com/xtls/xray-core/transport/internet/stat"
+	"github.com/xtls/xray-core/transport/internet/tls"
 )
 
 func Test_listenHTTPUpgradeAndDial(t *testing.T) {
@@ -182,6 +182,8 @@ func Test_listenHTTPUpgradeAndDial_TLS(t *testing.T) {
 
 	start := time.Now()
 
+	ct, ctHash := cert.MustGenerate(nil, cert.CommonName("localhost"))
+
 	streamSettings := &internet.MemoryStreamConfig{
 		ProtocolName: "httpupgrade",
 		ProtocolSettings: &Config{
@@ -189,8 +191,8 @@ func Test_listenHTTPUpgradeAndDial_TLS(t *testing.T) {
 		},
 		SecurityType: "tls",
 		SecuritySettings: &tls.Config{
-			AllowInsecure: true,
-			Certificate:   []*tls.Certificate{tls.ParseCertificate(cert.MustGenerate(nil, cert.CommonName("localhost")))},
+			Certificate:          []*tls.Certificate{tls.ParseCertificate(ct)},
+			PinnedPeerCertSha256: [][]byte{ctHash[:]},
 		},
 	}
 	listen, err := ListenHTTPUpgrade(context.Background(), net.LocalHostIP, listenPort, streamSettings, func(conn stat.Connection) {

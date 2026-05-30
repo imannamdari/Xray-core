@@ -1,57 +1,52 @@
 package dispatcher
 
-//go:generate go run github.com/imannamdari/xray-core/common/errors/errorgen
-
 import (
 	"context"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/common/log"
-	"github.com/imannamdari/xray-core/common/net"
-	"github.com/imannamdari/xray-core/common/protocol"
-	"github.com/imannamdari/xray-core/common/session"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/dns"
-	"github.com/imannamdari/xray-core/features/outbound"
-	"github.com/imannamdari/xray-core/features/policy"
-	"github.com/imannamdari/xray-core/features/routing"
-	routing_session "github.com/imannamdari/xray-core/features/routing/session"
-	"github.com/imannamdari/xray-core/features/stats"
-	"github.com/imannamdari/xray-core/transport"
-	"github.com/imannamdari/xray-core/transport/pipe"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/log"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/dns"
+	"github.com/xtls/xray-core/features/outbound"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/features/routing"
+	routing_session "github.com/xtls/xray-core/features/routing/session"
+	"github.com/xtls/xray-core/features/stats"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/pipe"
 )
 
 var errSniffingTimeout = errors.New("timeout on sniffing")
 
 type cachedReader struct {
 	sync.Mutex
-	reader *pipe.Reader
+	reader buf.TimeoutReader // *pipe.Reader or *buf.TimeoutWrapperReader
 	cache  buf.MultiBuffer
 }
 
-func (r *cachedReader) Cache(b *buf.Buffer) {
-	mb, _ := r.reader.ReadMultiBufferTimeout(time.Millisecond * 100)
+func (r *cachedReader) Cache(b *buf.Buffer, deadline time.Duration) error {
+	mb, err := r.reader.ReadMultiBufferTimeout(deadline)
+	if err != nil {
+		return err
+	}
 	r.Lock()
 	if !mb.IsEmpty() {
 		r.cache, _ = buf.MergeMulti(r.cache, mb)
 	}
-	cacheLen := r.cache.Len()
-	if cacheLen <= b.Cap() {
-		b.Clear()
-	} else {
-		b.Release()
-		*b = *buf.NewWithSize(cacheLen)
-	}
-	rawBytes := b.Extend(cacheLen)
+	b.Clear()
+	rawBytes := b.Extend(min(r.cache.Len(), b.Cap()))
 	n := r.cache.Copy(rawBytes)
 	b.Resize(0, int32(n))
 	r.Unlock()
+	return nil
 }
 
 func (r *cachedReader) readInternal() buf.MultiBuffer {
@@ -91,7 +86,9 @@ func (r *cachedReader) Interrupt() {
 		r.cache = buf.ReleaseMulti(r.cache)
 	}
 	r.Unlock()
-	r.reader.Interrupt()
+	if p, ok := r.reader.(*pipe.Reader); ok {
+		p.Interrupt()
+	}
 }
 
 // DefaultDispatcher is a default implementation of Dispatcher.
@@ -100,7 +97,6 @@ type DefaultDispatcher struct {
 	router routing.Router
 	policy policy.Manager
 	stats  stats.Manager
-	dns    dns.Client
 	fdns   dns.FakeDNSEngine
 }
 
@@ -108,10 +104,10 @@ func init() {
 	common.Must(common.RegisterConfig((*Config)(nil), func(ctx context.Context, config interface{}) (interface{}, error) {
 		d := new(DefaultDispatcher)
 		if err := core.RequireFeatures(ctx, func(om outbound.Manager, router routing.Router, pm policy.Manager, sm stats.Manager, dc dns.Client) error {
-			core.RequireFeatures(ctx, func(fdns dns.FakeDNSEngine) {
+			core.OptionalFeatures(ctx, func(fdns dns.FakeDNSEngine) {
 				d.fdns = fdns
 			})
-			return d.Init(config.(*Config), om, router, pm, sm, dc)
+			return d.Init(config.(*Config), om, router, pm, sm)
 		}); err != nil {
 			return nil, err
 		}
@@ -120,12 +116,11 @@ func init() {
 }
 
 // Init initializes DefaultDispatcher.
-func (d *DefaultDispatcher) Init(config *Config, om outbound.Manager, router routing.Router, pm policy.Manager, sm stats.Manager, dns dns.Client) error {
+func (d *DefaultDispatcher) Init(config *Config, om outbound.Manager, router routing.Router, pm policy.Manager, sm stats.Manager) error {
 	d.ohm = om
 	d.router = router
 	d.policy = pm
 	d.stats = sm
-	d.dns = dns
 	return nil
 }
 
@@ -183,9 +178,55 @@ func (d *DefaultDispatcher) getLink(ctx context.Context) (*transport.Link, *tran
 				}
 			}
 		}
+
+		if p.Stats.UserOnline {
+			trackOnlineIP(ctx, d.stats, user.Email, sessionInbound.Source.Address.String())
+		}
 	}
 
 	return inboundLink, outboundLink
+}
+
+func WrapLink(ctx context.Context, policyManager policy.Manager, statsManager stats.Manager, link *transport.Link) *transport.Link {
+	sessionInbound := session.InboundFromContext(ctx)
+	var user *protocol.MemoryUser
+	if sessionInbound != nil {
+		user = sessionInbound.User
+	}
+
+	link.Reader = &buf.TimeoutWrapperReader{Reader: link.Reader}
+
+	if user != nil && len(user.Email) > 0 {
+		p := policyManager.ForLevel(user.Level)
+		if p.Stats.UserUplink {
+			name := "user>>>" + user.Email + ">>>traffic>>>uplink"
+			if c, _ := stats.GetOrRegisterCounter(statsManager, name); c != nil {
+				link.Reader.(*buf.TimeoutWrapperReader).Counter = c
+			}
+		}
+		if p.Stats.UserDownlink {
+			name := "user>>>" + user.Email + ">>>traffic>>>downlink"
+			if c, _ := stats.GetOrRegisterCounter(statsManager, name); c != nil {
+				link.Writer = &SizeStatWriter{
+					Counter: c,
+					Writer:  link.Writer,
+				}
+			}
+		}
+		if p.Stats.UserOnline {
+			trackOnlineIP(ctx, statsManager, user.Email, sessionInbound.Source.Address.String())
+		}
+	}
+
+	return link
+}
+
+func trackOnlineIP(ctx context.Context, sm stats.Manager, email, ip string) {
+	name := "user>>>" + email + ">>>online"
+	if om, _ := stats.GetOrRegisterOnlineMap(sm, name); om != nil {
+		om.AddIP(ip)
+		context.AfterFunc(ctx, func() { om.RemoveIP(ip) })
+	}
 }
 
 func (d *DefaultDispatcher) shouldOverride(ctx context.Context, result SniffResult, request session.SniffingRequest, destination net.Destination) bool {
@@ -193,22 +234,11 @@ func (d *DefaultDispatcher) shouldOverride(ctx context.Context, result SniffResu
 	if domain == "" {
 		return false
 	}
-	for _, d := range request.ExcludeForDomain {
-		if strings.HasPrefix(d, "regexp:") {
-			pattern := d[7:]
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				errors.LogInfo(ctx, "Unable to compile regex")
-				continue
-			}
-			if re.MatchString(domain) {
-				return false
-			}
-		} else {
-			if strings.ToLower(domain) == d {
-				return false
-			}
-		}
+	if request.ExcludeForDomain != nil && request.ExcludeForDomain.MatchAny(strings.ToLower(domain)) {
+		return false
+	}
+	if request.ExcludeForIP != nil && destination.Address.Family().IsIP() && request.ExcludeForIP.Match(destination.Address.IP()) {
+		return false
 	}
 	protocolString := result.Protocol()
 	if resComp, ok := result.(SnifferResultComposite); ok {
@@ -308,12 +338,13 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 		content = new(session.Content)
 		ctx = session.ContextWithContent(ctx, content)
 	}
+	outbound = WrapLink(ctx, d.policy, d.stats, outbound)
 	sniffingRequest := content.SniffingRequest
 	if !sniffingRequest.Enabled {
 		d.routedDispatch(ctx, outbound, destination)
 	} else {
 		cReader := &cachedReader{
-			reader: outbound.Reader.(*pipe.Reader),
+			reader: outbound.Reader.(buf.TimeoutReader),
 		}
 		outbound.Reader = cReader
 		result, err := sniffer(ctx, cReader, sniffingRequest.MetadataOnly, destination.Network)
@@ -345,7 +376,7 @@ func (d *DefaultDispatcher) DispatchLink(ctx context.Context, destination net.De
 }
 
 func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, network net.Network) (SniffResult, error) {
-	payload := buf.New()
+	payload := buf.NewWithSize(32767)
 	defer payload.Release()
 
 	sniffer := NewSniffer(ctx)
@@ -357,26 +388,36 @@ func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, netw
 	}
 
 	contentResult, contentErr := func() (SniffResult, error) {
+		cacheDeadline := 200 * time.Millisecond
 		totalAttempt := 0
 		for {
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			default:
-				totalAttempt++
-				if totalAttempt > 2 {
-					return nil, errSniffingTimeout
+				cachingStartingTimeStamp := time.Now()
+				err := cReader.Cache(payload, cacheDeadline)
+				if err != nil {
+					return nil, err
 				}
+				cachingTimeElapsed := time.Since(cachingStartingTimeStamp)
+				cacheDeadline -= cachingTimeElapsed
 
-				cReader.Cache(payload)
 				if !payload.IsEmpty() {
 					result, err := sniffer.Sniff(ctx, payload.Bytes(), network)
-					if err != common.ErrNoClue {
+					switch err {
+					case common.ErrNoClue: // No Clue: protocol not matches, and sniffer cannot determine whether there will be a match or not
+						totalAttempt++
+					case protocol.ErrProtoNeedMoreData: // Protocol Need More Data: protocol matches, but need more data to complete sniffing
+						// in this case, do not add totalAttempt(allow to read until timeout)
+					default:
 						return result, err
 					}
+				} else {
+					totalAttempt++
 				}
-				if payload.IsFull() {
-					return nil, errUnknownContent
+				if totalAttempt >= 2 || cacheDeadline <= 0 {
+					return nil, errSniffingTimeout
 				}
 			}
 		}
@@ -389,21 +430,10 @@ func sniffer(ctx context.Context, cReader *cachedReader, metadataOnly bool, netw
 	}
 	return contentResult, contentErr
 }
+
 func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.Link, destination net.Destination) {
 	outbounds := session.OutboundsFromContext(ctx)
 	ob := outbounds[len(outbounds)-1]
-	if hosts, ok := d.dns.(dns.HostsLookup); ok && destination.Address.Family().IsDomain() {
-		proxied := hosts.LookupHosts(ob.Target.String())
-		if proxied != nil {
-			ro := ob.RouteTarget == destination
-			destination.Address = *proxied
-			if ro {
-				ob.RouteTarget = destination
-			} else {
-				ob.Target = destination
-			}
-		}
-	}
 
 	var handler outbound.Handler
 
@@ -435,6 +465,9 @@ func (d *DefaultDispatcher) routedDispatch(ctx context.Context, link *transport.
 				handler = h
 			} else {
 				errors.LogWarning(ctx, "non existing outTag: ", outTag)
+				common.Close(link.Writer)
+				common.Interrupt(link.Reader)
+				return // DO NOT CHANGE: the traffic shouldn't be processed by default outbound if the specified outbound tag doesn't exist (yet), e.g., VLESS Reverse Proxy
 			}
 		} else {
 			errors.LogInfo(ctx, "default route for ", destination)

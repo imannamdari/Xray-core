@@ -3,12 +3,14 @@ package command
 import (
 	"context"
 
-	"github.com/imannamdari/xray-core/common"
-	"github.com/imannamdari/xray-core/common/errors"
-	"github.com/imannamdari/xray-core/core"
-	"github.com/imannamdari/xray-core/features/inbound"
-	"github.com/imannamdari/xray-core/features/outbound"
-	"github.com/imannamdari/xray-core/proxy"
+	"github.com/xtls/xray-core/app/commander"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/inbound"
+	"github.com/xtls/xray-core/features/outbound"
+	"github.com/xtls/xray-core/proxy"
 	grpc "google.golang.org/grpc"
 )
 
@@ -98,6 +100,68 @@ func (s *handlerServer) AlterInbound(ctx context.Context, request *AlterInboundR
 	return &AlterInboundResponse{}, operation.ApplyInbound(ctx, handler)
 }
 
+func (s *handlerServer) ListInbounds(ctx context.Context, request *ListInboundsRequest) (*ListInboundsResponse, error) {
+	handlers := s.ihm.ListHandlers(ctx)
+	response := &ListInboundsResponse{}
+	if request.GetIsOnlyTags() {
+		for _, handler := range handlers {
+			response.Inbounds = append(response.Inbounds, &core.InboundHandlerConfig{
+				Tag: handler.Tag(),
+			})
+		}
+	} else {
+		for _, handler := range handlers {
+			response.Inbounds = append(response.Inbounds, &core.InboundHandlerConfig{
+				Tag:              handler.Tag(),
+				ReceiverSettings: handler.ReceiverSettings(),
+				ProxySettings:    handler.ProxySettings(),
+			})
+		}
+	}
+
+	return response, nil
+}
+
+func (s *handlerServer) GetInboundUsers(ctx context.Context, request *GetInboundUserRequest) (*GetInboundUserResponse, error) {
+	handler, err := s.ihm.GetHandler(ctx, request.Tag)
+	if err != nil {
+		return nil, errors.New("failed to get handler: ", request.Tag).Base(err)
+	}
+	p, err := getInbound(handler)
+	if err != nil {
+		return nil, err
+	}
+	um, ok := p.(proxy.UserManager)
+	if !ok {
+		return nil, errors.New("proxy is not a UserManager")
+	}
+	if len(request.Email) > 0 {
+		return &GetInboundUserResponse{Users: []*protocol.User{protocol.ToProtoUser(um.GetUser(ctx, request.Email))}}, nil
+	}
+	result := make([]*protocol.User, 0, 100)
+	users := um.GetUsers(ctx)
+	for _, u := range users {
+		result = append(result, protocol.ToProtoUser(u))
+	}
+	return &GetInboundUserResponse{Users: result}, nil
+}
+
+func (s *handlerServer) GetInboundUsersCount(ctx context.Context, request *GetInboundUserRequest) (*GetInboundUsersCountResponse, error) {
+	handler, err := s.ihm.GetHandler(ctx, request.Tag)
+	if err != nil {
+		return nil, errors.New("failed to get handler: ", request.Tag).Base(err)
+	}
+	p, err := getInbound(handler)
+	if err != nil {
+		return nil, err
+	}
+	um, ok := p.(proxy.UserManager)
+	if !ok {
+		return nil, errors.New("proxy is not a UserManager")
+	}
+	return &GetInboundUsersCountResponse{Count: um.GetUsersCount(ctx)}, nil
+}
+
 func (s *handlerServer) AddOutbound(ctx context.Context, request *AddOutboundRequest) (*AddOutboundResponse, error) {
 	if err := core.AddOutboundHandler(s.s, request.Outbound); err != nil {
 		return nil, err
@@ -123,6 +187,23 @@ func (s *handlerServer) AlterOutbound(ctx context.Context, request *AlterOutboun
 	return &AlterOutboundResponse{}, operation.ApplyOutbound(ctx, handler)
 }
 
+func (s *handlerServer) ListOutbounds(ctx context.Context, request *ListOutboundsRequest) (*ListOutboundsResponse, error) {
+	handlers := s.ohm.ListHandlers(ctx)
+	response := &ListOutboundsResponse{}
+	for _, handler := range handlers {
+		// Ignore gRPC outbound
+		if _, ok := handler.(*commander.Outbound); ok {
+			continue
+		}
+		response.Outbounds = append(response.Outbounds, &core.OutboundHandlerConfig{
+			Tag:            handler.Tag(),
+			SenderSettings: handler.SenderSettings(),
+			ProxySettings:  handler.ProxySettings(),
+		})
+	}
+	return response, nil
+}
+
 func (s *handlerServer) mustEmbedUnimplementedHandlerServiceServer() {}
 
 type service struct {
@@ -136,7 +217,7 @@ func (s *service) Register(server *grpc.Server) {
 	common.Must(s.v.RequireFeatures(func(im inbound.Manager, om outbound.Manager) {
 		hs.ihm = im
 		hs.ohm = om
-	}))
+	}, false))
 	RegisterHandlerServiceServer(server, hs)
 
 	// For compatibility purposes

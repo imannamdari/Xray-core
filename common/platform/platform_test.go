@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/imannamdari/xray-core/common"
-	. "github.com/imannamdari/xray-core/common/platform"
+	"github.com/xtls/xray-core/common"
+	. "github.com/xtls/xray-core/common/platform"
 )
 
 func TestNormalizeEnvName(t *testing.T) {
@@ -36,9 +36,10 @@ func TestNormalizeEnvName(t *testing.T) {
 }
 
 func TestEnvFlag(t *testing.T) {
-	if v := (EnvFlag{
+	v := EnvFlag{
 		Name: "xxxxx.y",
-	}.GetValueAsInt(10)); v != 10 {
+	}.GetValueAsInt(10)
+	if v != 10 {
 		t.Error("env value: ", v)
 	}
 }

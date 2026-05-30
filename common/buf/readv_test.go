@@ -1,5 +1,5 @@
-//go:build !wasm
-// +build !wasm
+//go:build !wasm && !openbsd
+// +build !wasm,!openbsd
 
 package buf_test
 
@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/imannamdari/xray-core/common"
-	. "github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/common"
+	. "github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/testing/servers/tcp"
 	"golang.org/x/sync/errgroup"
 )
 

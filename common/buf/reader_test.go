@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/imannamdari/xray-core/common"
-	. "github.com/imannamdari/xray-core/common/buf"
-	"github.com/imannamdari/xray-core/transport/pipe"
+	"github.com/xtls/xray-core/common"
+	. "github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/transport/pipe"
 )
 
 func TestBytesReaderWriteTo(t *testing.T) {
@@ -121,11 +121,11 @@ func TestPacketReader_ReadMultiBuffer(t *testing.T) {
 }
 
 func TestReaderInterface(t *testing.T) {
-	_ = (io.Reader)(new(ReadVReader))
-	_ = (Reader)(new(ReadVReader))
+	_ = io.Reader(new(ReadVReader))
+	_ = Reader(new(ReadVReader))
 
-	_ = (Reader)(new(BufferedReader))
-	_ = (io.Reader)(new(BufferedReader))
-	_ = (io.ByteReader)(new(BufferedReader))
-	_ = (io.WriterTo)(new(BufferedReader))
+	_ = Reader(new(BufferedReader))
+	_ = io.Reader(new(BufferedReader))
+	_ = io.ByteReader(new(BufferedReader))
+	_ = io.WriterTo(new(BufferedReader))
 }
