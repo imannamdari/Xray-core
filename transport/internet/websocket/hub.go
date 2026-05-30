@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	http_proto "github.com/xtls/xray-core/common/protocol/http"
-	"github.com/xtls/xray-core/transport/internet"
-	v2tls "github.com/xtls/xray-core/transport/internet/tls"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/net"
+	http_proto "github.com/imannamdari/xray-core/common/protocol/http"
+	"github.com/imannamdari/xray-core/transport/internet"
+	v2tls "github.com/imannamdari/xray-core/transport/internet/tls"
 )
 
 type requestHandler struct {

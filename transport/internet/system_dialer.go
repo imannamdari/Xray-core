@@ -6,10 +6,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/features/dns"
-	"github.com/xtls/xray-core/features/outbound"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/features/dns"
+	"github.com/imannamdari/xray-core/features/outbound"
 )
 
 var (

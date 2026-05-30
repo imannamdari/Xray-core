@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xtls/xray-core/common/crypto"
-	"github.com/xtls/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/crypto"
+	"github.com/imannamdari/xray-core/common/errors"
 )
 
 type tcpCustomClient struct {

@@ -6,11 +6,11 @@ import (
 	"net"
 	"time"
 
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/imannamdari/xray-core/common/signal"
+	"github.com/imannamdari/xray-core/transport"
 	"github.com/sagernet/sing/common/bufio"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/buf"
-	"github.com/xtls/xray-core/common/signal"
-	"github.com/xtls/xray-core/transport"
 )
 
 func CopyConn(ctx context.Context, inboundConn net.Conn, link *transport.Link, serverConn net.Conn) error {

@@ -1,8 +1,8 @@
 package kcp
 
 import (
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/transport/internet"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/transport/internet"
 )
 
 func (c *Config) GetSendingInFlightSize() uint32 {

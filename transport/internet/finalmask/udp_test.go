@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/imannamdari/xray-core/proxy"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask/header/custom"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask/mkcp/aes128gcm"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask/mkcp/header"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask/mkcp/original"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask/salamander"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask/sudoku"
 	singM "github.com/sagernet/sing/common/metadata"
 	singN "github.com/sagernet/sing/common/network"
-	"github.com/xtls/xray-core/proxy"
-	"github.com/xtls/xray-core/transport/internet/finalmask"
-	"github.com/xtls/xray-core/transport/internet/finalmask/header/custom"
-	"github.com/xtls/xray-core/transport/internet/finalmask/mkcp/aes128gcm"
-	"github.com/xtls/xray-core/transport/internet/finalmask/mkcp/header"
-	"github.com/xtls/xray-core/transport/internet/finalmask/mkcp/original"
-	"github.com/xtls/xray-core/transport/internet/finalmask/salamander"
-	"github.com/xtls/xray-core/transport/internet/finalmask/sudoku"
 )
 
 func mustSendRecv(

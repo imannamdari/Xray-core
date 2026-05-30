@@ -10,8 +10,8 @@ import (
 	"github.com/armon/go-socks5"
 	"github.com/sirupsen/logrus"
 
-	"github.com/xtls/xray-core/common"
-	sshFeature "github.com/xtls/xray-core/features/ssh"
+	"github.com/imannamdari/xray-core/common"
+	sshFeature "github.com/imannamdari/xray-core/features/ssh"
 )
 
 type SSH struct {
@@ -22,7 +22,7 @@ type SSH struct {
 	runningPort int32
 
 	listener *net.Listener
-	closeCh chan struct{}
+	closeCh  chan struct{}
 }
 
 func New(ctx context.Context, config *Config) (*SSH, error) {
@@ -32,7 +32,7 @@ func New(ctx context.Context, config *Config) (*SSH, error) {
 		user:        config.GetUser(),
 		password:    config.GetPassword(),
 		runningPort: config.GetRunningPort(),
-		closeCh:    make(chan struct{}),
+		closeCh:     make(chan struct{}),
 	}
 	return sshS, nil
 }

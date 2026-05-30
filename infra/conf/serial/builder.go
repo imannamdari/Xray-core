@@ -4,12 +4,12 @@ import (
 	"context"
 	"io"
 
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/platform"
-	creflect "github.com/xtls/xray-core/common/reflect"
-	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/infra/conf"
-	"github.com/xtls/xray-core/main/confloader"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/platform"
+	creflect "github.com/imannamdari/xray-core/common/reflect"
+	"github.com/imannamdari/xray-core/core"
+	"github.com/imannamdari/xray-core/infra/conf"
+	"github.com/imannamdari/xray-core/main/confloader"
 )
 
 // UseStrictJSON, when true, makes JSON config decoders skip the custom

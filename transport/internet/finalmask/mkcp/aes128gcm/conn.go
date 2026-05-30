@@ -6,8 +6,8 @@ import (
 	"crypto/sha256"
 	"net"
 
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/crypto"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/crypto"
 )
 
 type aes128gcmConn struct {

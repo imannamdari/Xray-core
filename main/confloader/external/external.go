@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xtls/xray-core/common/buf"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/utils"
-	"github.com/xtls/xray-core/main/confloader"
+	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/utils"
+	"github.com/imannamdari/xray-core/main/confloader"
 )
 
 func ConfigLoader(arg string) (out io.Reader, err error) {

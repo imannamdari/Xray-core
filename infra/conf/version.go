@@ -3,8 +3,8 @@ package conf
 import (
 	"strconv"
 
-	"github.com/xtls/xray-core/app/version"
-	"github.com/xtls/xray-core/core"
+	"github.com/imannamdari/xray-core/app/version"
+	"github.com/imannamdari/xray-core/core"
 )
 
 type VersionConfig struct {

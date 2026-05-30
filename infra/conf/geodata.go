@@ -3,10 +3,10 @@ package conf
 import (
 	"net/url"
 
+	"github.com/imannamdari/xray-core/app/geodata"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/platform/filesystem"
 	"github.com/robfig/cron/v3"
-	"github.com/xtls/xray-core/app/geodata"
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/platform/filesystem"
 	"google.golang.org/protobuf/proto"
 )
 

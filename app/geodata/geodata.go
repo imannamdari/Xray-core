@@ -4,12 +4,12 @@ import (
 	"context"
 	"sync"
 
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/errors"
+	commongeodata "github.com/imannamdari/xray-core/common/geodata"
+	"github.com/imannamdari/xray-core/core"
+	"github.com/imannamdari/xray-core/features/routing"
 	"github.com/robfig/cron/v3"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/errors"
-	commongeodata "github.com/xtls/xray-core/common/geodata"
-	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/features/routing"
 )
 
 type Instance struct {

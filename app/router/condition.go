@@ -8,11 +8,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/xtls/xray-core/common/errors"
-	"github.com/xtls/xray-core/common/geodata"
-	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/features/routing"
-	"github.com/xtls/xray-core/features/routing/dns"
+	"github.com/imannamdari/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/geodata"
+	"github.com/imannamdari/xray-core/common/net"
+	"github.com/imannamdari/xray-core/features/routing"
+	"github.com/imannamdari/xray-core/features/routing/dns"
 )
 
 type Condition interface {
