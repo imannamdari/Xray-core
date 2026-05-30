@@ -1,7 +1,7 @@
 package ssh
 
 import (
-	"github.com/xtls/xray-core/features"
+	"github.com/imannamdari/xray-core/features"
 )
 
 type SSHEngine interface {

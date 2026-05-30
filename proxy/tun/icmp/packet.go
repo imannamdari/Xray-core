@@ -1,7 +1,7 @@
 package icmp
 
 import (
-	"github.com/xtls/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"

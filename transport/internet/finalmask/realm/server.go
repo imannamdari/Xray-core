@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/errors"
 	"github.com/pion/stun/v3"
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/errors"
 )
 
 const (

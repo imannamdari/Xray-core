@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xtls/xray-core/transport/internet/finalmask"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask"
 )
 
 const (

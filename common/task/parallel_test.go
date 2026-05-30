@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/xtls/xray-core/common"
-	. "github.com/xtls/xray-core/common/task"
+	"github.com/imannamdari/xray-core/common"
+	. "github.com/imannamdari/xray-core/common/task"
 )
 
 func TestParallelForN_Empty(t *testing.T) {

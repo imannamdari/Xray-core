@@ -3,7 +3,7 @@ package header
 import (
 	"net"
 
-	"github.com/xtls/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common/errors"
 )
 
 type headerConn struct {

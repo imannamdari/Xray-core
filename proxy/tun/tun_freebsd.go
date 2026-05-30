@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/xtls/xray-core/common/buf"
+	"github.com/imannamdari/xray-core/common/buf"
 )
 
 const tunHeaderSize = 4

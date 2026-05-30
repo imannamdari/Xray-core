@@ -6,8 +6,8 @@ import (
 	"hash/fnv"
 	"net"
 
-	"github.com/xtls/xray-core/common"
-	"github.com/xtls/xray-core/common/errors"
+	"github.com/imannamdari/xray-core/common"
+	"github.com/imannamdari/xray-core/common/errors"
 )
 
 type simple struct{}

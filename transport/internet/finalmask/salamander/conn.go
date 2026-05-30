@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/xtls/xray-core/common/buf"
-	"github.com/xtls/xray-core/transport/internet/finalmask"
+	"github.com/imannamdari/xray-core/common/buf"
+	"github.com/imannamdari/xray-core/transport/internet/finalmask"
 )
 
 type salamanderConn struct {

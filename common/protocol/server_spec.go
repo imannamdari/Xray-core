@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"github.com/xtls/xray-core/common/net"
+	"github.com/imannamdari/xray-core/common/net"
 )
 
 type ServerSpec struct {
